@@ -8,11 +8,21 @@
       content="QR Code Studio - генератор красивых QR-кодов с логотипом и настройками стиля."
     />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
-    <link rel="stylesheet" href="./assets/index-tB_OTb_C.css" />
     <title>QR Code Studio</title>
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="./assets/index-BZ1LwBvX.js"></script>
+    <script type="module">
+      if (window.location.hostname.endsWith("github.io")) {
+        const styles = document.createElement("link");
+        styles.rel = "stylesheet";
+        styles.href = "./assets/app.css";
+        document.head.append(styles);
+        const loadApp = new Function('return import("./assets/main.js")');
+        loadApp();
+      } else {
+        import("/src/main.ts");
+      }
+    </script>
   </body>
 </html>
