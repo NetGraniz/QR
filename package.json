@@ -1,0 +1,18 @@
+{
+  "name": "qr-code-studio",
+  "version": "1.0.0",
+  "description": "Static QR code generator with custom styles and logo support.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "qr-code-styling": "^1.9.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^7.0.2"
+  }
+}
