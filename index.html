@@ -12,6 +12,16 @@
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module">
+      if (window.location.hostname.endsWith("github.io")) {
+        const styles = document.createElement("link");
+        styles.rel = "stylesheet";
+        styles.href = "./assets/index-tB_OTb_C.css";
+        document.head.append(styles);
+        import("./assets/index-BZ1LwBvX.js");
+      } else {
+        import("/src/main.ts");
+      }
+    </script>
   </body>
 </html>
