@@ -201,8 +201,8 @@ legend {
 
 .preset-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: 12px;
 }
 
 .preset-button,
@@ -226,11 +226,14 @@ legend {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   border-color: #dbe4f0;
   background: #ffffff;
   color: #334155;
+  hyphens: auto;
   text-align: left;
+  white-space: normal;
+  word-break: normal;
 }
 
 .preset-button:hover,
