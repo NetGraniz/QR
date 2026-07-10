@@ -664,11 +664,13 @@ function bindEvents(): void {
 
 function handleSettingChange(event: Event): void {
   const element = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+  const focusSnapshot = captureInputFocus(element);
   const barcodeSetting = element.dataset.barcodeSetting;
   if (barcodeSetting) {
     const value = element instanceof HTMLInputElement && element.type === "checkbox" ? element.checked : element.value;
     setNestedBarcodeSetting(barcodeSetting, value);
     render();
+    restoreInputFocus(focusSnapshot);
     return;
   }
 
@@ -678,6 +680,50 @@ function handleSettingChange(event: Event): void {
   const value = element instanceof HTMLInputElement && element.type === "checkbox" ? element.checked : element.value;
   setNestedSetting(setting, value);
   render();
+  restoreInputFocus(focusSnapshot);
+}
+
+type InputFocusSnapshot = {
+  attribute: "data-setting" | "data-barcode-setting";
+  value: string;
+  selectionStart: number | null;
+  selectionEnd: number | null;
+} | null;
+
+function captureInputFocus(element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement): InputFocusSnapshot {
+  const value = element.dataset.barcodeSetting ?? element.dataset.setting;
+  if (!value) return null;
+
+  const attribute = element.dataset.barcodeSetting ? "data-barcode-setting" : "data-setting";
+  let selectionStart: number | null = null;
+  let selectionEnd: number | null = null;
+
+  try {
+    selectionStart = "selectionStart" in element ? element.selectionStart : null;
+    selectionEnd = "selectionEnd" in element ? element.selectionEnd : null;
+  } catch {
+    selectionStart = null;
+    selectionEnd = null;
+  }
+
+  return { attribute, value, selectionStart, selectionEnd };
+}
+
+function restoreInputFocus(snapshot: InputFocusSnapshot): void {
+  if (!snapshot) return;
+
+  const selector = `[${snapshot.attribute}="${snapshot.value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`;
+  const element = settingsForm.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(selector);
+  if (!element) return;
+
+  element.focus();
+  if (snapshot.selectionStart !== null && snapshot.selectionEnd !== null && "setSelectionRange" in element) {
+    try {
+      element.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd);
+    } catch {
+      // Non-text controls do not support restoring a cursor range.
+    }
+  }
 }
 
 function setNestedBarcodeSetting(path: string, value: string | boolean): void {

@@ -104,7 +104,20 @@ export function getSafeOpenUrl(value: string): string | null {
 
 function scanQrFromImageData(imageData: ImageData, source: ScanSource): ScanResult | null {
   const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
-  return result ? { format: "qr_code", value: result.data, source } : null;
+  return result ? { format: "qr_code", value: decodeQrBinaryData(result.data, result.binaryData), source } : null;
+}
+
+export function decodeQrBinaryData(data: string, binaryData: number[]): string {
+  if (!binaryData.length || typeof TextDecoder === "undefined") {
+    return data;
+  }
+
+  try {
+    const decoded = new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(binaryData));
+    return decoded && !decoded.includes("\uFFFD") ? decoded : data;
+  } catch {
+    return data;
+  }
 }
 
 function unavailableVerificationOutcome(): ScanOutcome {

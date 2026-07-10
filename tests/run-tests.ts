@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { calculateEan13CheckDigit, hasValidEan13CheckDigit } from "../src/barcode/checkDigits";
 import { validateBarcode, validateEan8, validateItf14, validateUpcA } from "../src/barcode/barcodeValidation";
 import { buildEmailPayload, buildSmsPayload, buildVCardPayload, buildWifiPayload } from "../src/qr/qrPayloads";
-import { getSafeOpenUrl } from "../src/scanner/scanner";
+import { decodeQrBinaryData, getSafeOpenUrl } from "../src/scanner/scanner";
 import { isSafeUrl } from "../src/shared/security";
 import { sanitizeFileName } from "../src/shared/fileNames";
 import { loadSettingsFromStorage } from "../src/storage";
@@ -70,6 +70,11 @@ describe("Safety helpers", () => {
     assert.equal(getSafeOpenUrl("javascript:alert(1)"), null);
     assert.equal(getSafeOpenUrl("plain text"), null);
     assert.equal(getSafeOpenUrl("example.com"), "https://example.com");
+  });
+
+  it("decodes UTF-8 QR bytes for Cyrillic text", () => {
+    const text = "\u041f\u0440\u0438\u0432\u0435\u0442";
+    assert.equal(decodeQrBinaryData("ÐŸÑ€Ð¸Ð²ÐµÑ‚", Array.from(new TextEncoder().encode(text))), text);
   });
 
   it("sanitizes file names", () => {
