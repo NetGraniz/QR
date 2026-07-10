@@ -570,6 +570,19 @@ legend {
   place-items: center;
   max-width: 100%;
   padding: 18px;
+  box-sizing: border-box;
+}
+
+#qrPreview.has-qr-frame {
+  border-style: solid;
+  background: #ffffff;
+}
+
+.qr-caption-preview {
+  width: 100%;
+  margin-top: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 #qrPreview canvas,

@@ -20,6 +20,8 @@ QR Code Studio is a lightweight static web app for generating QR codes and linea
 - Barcode validation with automatic check digit calculation for EAN-13, EAN-8, UPC-A, and ITF-14 where the format allows it.
 - Barcode styling: bar width, height, colors, transparent background, margins, value text, text size, bold text, and alignment.
 - Barcode export to PNG, JPEG, and SVG with PNG scale options.
+- Unified export actions for generated QR codes and barcodes: download, copy PNG, copy SVG code, and print.
+- Optional QR frame and caption that are included in PNG, JPEG, and SVG exports.
 - Scanner mode for images, drag-and-drop, clipboard paste, and camera input.
 - Browser `BarcodeDetector` support for QR codes and supported linear barcodes, with `jsQR` fallback for QR images.
 - Automatic QR preview verification directly in the browser.
@@ -32,8 +34,7 @@ QR Code Studio is a lightweight static web app for generating QR codes and linea
 
 ## Planned Next Stages
 
-- Deeper export tools such as copying PNG/SVG to clipboard and browser print.
-- Richer logo masks, frame, and caption export composition.
+- Richer logo masks, logo background controls, and logo opacity settings.
 
 ## Privacy
 

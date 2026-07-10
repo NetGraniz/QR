@@ -269,6 +269,30 @@ function renderQrForm(): void {
       </label>
     </details>
 
+    <details class="settings-section">
+      <summary>Рамка и подпись</summary>
+      <label class="toggle-field">
+        <input type="checkbox" data-setting="frame.enabled" ${qr.frame.enabled ? "checked" : ""} />
+        <span>Добавить рамку вокруг QR-кода</span>
+      </label>
+      <div class="control-grid">
+        ${colorField("frame.color", "Цвет рамки", qr.frame.color)}
+        ${numberField("frame.thickness", "Толщина рамки, px", qr.frame.thickness, 0, 24, 1)}
+        ${numberField("frame.radius", "Скругление, px", qr.frame.radius, 0, 80, 1)}
+        ${numberField("frame.padding", "Внутренний отступ, px", qr.frame.padding, 0, 80, 1)}
+      </div>
+      ${textField("caption.text", "Подпись", qr.caption.text, "Сканируйте меня")}
+      <div class="control-grid">
+        ${numberField("caption.size", "Размер подписи, px", qr.caption.size, 10, 48, 1)}
+        ${colorField("caption.color", "Цвет подписи", qr.caption.color)}
+        ${selectField("caption.align", "Выравнивание", qr.caption.align, [["left", "Слева"], ["center", "По центру"], ["right", "Справа"]])}
+      </div>
+      <label class="toggle-field">
+        <input type="checkbox" data-setting="caption.bold" ${qr.caption.bold ? "checked" : ""} />
+        <span>Жирная подпись</span>
+      </label>
+    </details>
+
     <details class="settings-section" open>
       <summary>Качество</summary>
       ${selectField("errorCorrectionLevel", "Уровень коррекции ошибок", qr.errorCorrectionLevel, ERROR_CORRECTION_LEVELS.map((level) => [level, level]))}
@@ -1010,6 +1034,10 @@ function setNestedSetting(path: string, value: string | boolean): void {
   else if (path === "imageMargin") target[key] = clampNumber(value, 0, 30, 8);
   else if (path === "gradientRotation") target[key] = clampNumber(value, 0, 360, 0);
   else if (path === "jpegQuality") target[key] = clampNumber(value, 0.6, 1, 0.92);
+  else if (path === "frame.thickness") target[key] = clampNumber(value, 0, 24, DEFAULT_QR_SETTINGS.frame.thickness);
+  else if (path === "frame.radius") target[key] = clampNumber(value, 0, 80, DEFAULT_QR_SETTINGS.frame.radius);
+  else if (path === "frame.padding") target[key] = clampNumber(value, 0, 80, DEFAULT_QR_SETTINGS.frame.padding);
+  else if (path === "caption.size") target[key] = clampNumber(value, 10, 48, DEFAULT_QR_SETTINGS.caption.size);
   else if (path === "exportScale") target[key] = Number(value) as 1 | 2 | 4;
   else target[key] = value;
 }
@@ -1059,6 +1087,7 @@ function renderPreview(): void {
   if (state.mode === "batch") {
     qrCode = null;
     barcodeSvg = null;
+    resetQrPreviewDecoration();
     qrSizeLabel.textContent = "CSV → ZIP";
     qrStage.classList.remove("is-transparent");
     warningBox.hidden = true;
@@ -1087,6 +1116,7 @@ function renderPreview(): void {
     } else {
       qrCode.update(options);
     }
+    decorateQrPreview();
   } catch (error) {
     console.error(error);
     setStatus("Не удалось сгенерировать QR-код.", true);
@@ -1096,9 +1126,42 @@ function renderPreview(): void {
   queueQrVerification(payload);
 }
 
+function decorateQrPreview(): void {
+  const frame = state.qr.frame;
+  const caption = state.qr.caption;
+  qrPreview.classList.add("qr-preview-content");
+  qrPreview.classList.toggle("has-qr-frame", frame.enabled);
+  qrPreview.style.borderColor = frame.enabled ? frame.color : "transparent";
+  qrPreview.style.borderWidth = frame.enabled ? `${frame.thickness}px` : "0";
+  qrPreview.style.borderRadius = frame.enabled ? `${frame.radius}px` : "0";
+  qrPreview.style.padding = frame.enabled ? `${frame.padding}px` : "";
+
+  qrPreview.querySelector(".qr-caption-preview")?.remove();
+
+  if (caption.text.trim()) {
+    const captionElement = document.createElement("div");
+    captionElement.className = "qr-caption-preview";
+    captionElement.textContent = caption.text;
+    captionElement.style.color = caption.color;
+    captionElement.style.fontSize = `${caption.size}px`;
+    captionElement.style.fontWeight = caption.bold ? "800" : "500";
+    captionElement.style.textAlign = caption.align;
+    qrPreview.append(captionElement);
+  }
+}
+
+function resetQrPreviewDecoration(): void {
+  qrPreview.classList.remove("has-qr-frame", "qr-preview-content");
+  qrPreview.style.borderColor = "";
+  qrPreview.style.borderWidth = "";
+  qrPreview.style.borderRadius = "";
+  qrPreview.style.padding = "";
+}
+
 function renderScannerPreview(): void {
   qrCode = null;
   barcodeSvg = null;
+  resetQrPreviewDecoration();
   qrSizeLabel.textContent = "Сканер";
   qrStage.classList.remove("is-transparent");
   warningBox.hidden = true;
@@ -1117,6 +1180,7 @@ function renderScannerPreview(): void {
 }
 
 function renderBarcodePreview(): void {
+  resetQrPreviewDecoration();
   const validation = validateBarcode(state.barcode.format, state.barcode.value);
   qrCode = null;
   qrSizeLabel.textContent = BARCODE_FORMAT_LABELS[state.barcode.format];
@@ -1184,24 +1248,15 @@ async function downloadQr(): Promise<void> {
     return;
   }
 
-  const scale = state.qr.downloadFormat === "png" ? state.qr.exportScale : 1;
   const fileName = sanitizeFileName(state.qr.fileName || `qr-${state.qr.contentType}`);
-  const override = scale > 1 ? { width: state.qr.width * scale, height: state.qr.height * scale } : undefined;
 
   try {
-    if (override) {
-      qrCode?.update(buildQrOptions(state.qr, currentPayload(), logoDataUrl, override));
-    }
-
-    await qrCode?.download({ name: fileName, extension: state.qr.downloadFormat });
+    const blob = await getQrExportBlob(state.qr.downloadFormat);
+    downloadBlob(`${fileName}.${state.qr.downloadFormat}`, blob);
     setStatus("QR-код скачан.");
   } catch (error) {
     console.error(error);
     setStatus("Не удалось скачать QR-код.", true);
-  } finally {
-    if (override) {
-      renderPreview();
-    }
   }
 }
 
@@ -1217,6 +1272,7 @@ async function getQrExportBlob(format: ExportFormat): Promise<Blob> {
     ...(scale > 1 ? { width: state.qr.width * scale, height: state.qr.height * scale } : {}),
     ...(format === "jpeg" && state.qr.transparentBackground ? { transparentBackground: false, backgroundColor: "#ffffff" } : {}),
   };
+  const exportSettings = { ...state.qr, ...override };
   const exporter = new QRCodeStyling(buildQrOptions(state.qr, currentPayload(), logoDataUrl, override));
   const raw = await exporter.getRawData(format);
 
@@ -1224,18 +1280,146 @@ async function getQrExportBlob(format: ExportFormat): Promise<Blob> {
     throw new Error("Не удалось подготовить QR-код.");
   }
 
+  let blob: Blob;
   if (raw instanceof Blob) {
-    return raw;
+    blob = raw;
+  } else if (typeof raw === "string") {
+    blob = new Blob([raw], { type: format === "svg" ? "image/svg+xml;charset=utf-8" : `image/${format}` });
+  } else {
+    const bytes = raw instanceof ArrayBuffer ? new Uint8Array(raw) : new Uint8Array(raw as unknown as Uint8Array);
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    blob = new Blob([copy], { type: format === "svg" ? "image/svg+xml;charset=utf-8" : `image/${format}` });
   }
 
-  if (typeof raw === "string") {
-    return new Blob([raw], { type: format === "svg" ? "image/svg+xml;charset=utf-8" : `image/${format}` });
+  if (!hasQrExportDecoration(exportSettings)) {
+    return blob;
   }
 
-  const bytes = raw instanceof ArrayBuffer ? new Uint8Array(raw) : new Uint8Array(raw as unknown as Uint8Array);
-  const copy = new Uint8Array(bytes.byteLength);
-  copy.set(bytes);
-  return new Blob([copy], { type: format === "svg" ? "image/svg+xml;charset=utf-8" : `image/${format}` });
+  return format === "svg" ? composeQrSvg(blob, exportSettings) : composeQrRaster(blob, exportSettings, format);
+}
+
+function hasQrExportDecoration(settings: QRSettings): boolean {
+  return settings.frame.enabled || Boolean(settings.caption.text.trim());
+}
+
+async function composeQrSvg(qrBlob: Blob, settings: QRSettings): Promise<Blob> {
+  const frame = settings.frame;
+  const caption = settings.caption;
+  const qrSvg = await qrBlob.text();
+  const padding = frame.enabled ? frame.padding : 0;
+  const thickness = frame.enabled ? frame.thickness : 0;
+  const captionText = caption.text.trim();
+  const captionGap = captionText ? Math.max(8, Math.round(caption.size * 0.6)) : 0;
+  const captionHeight = captionText ? Math.ceil(caption.size * 1.4) : 0;
+  const outerWidth = settings.width + (padding + thickness) * 2;
+  const outerHeight = settings.height + (padding + thickness) * 2 + captionGap + captionHeight;
+  const qrX = padding + thickness;
+  const qrY = padding + thickness;
+  const textAnchor = caption.align === "left" ? "start" : caption.align === "right" ? "end" : "middle";
+  const textX = caption.align === "left" ? qrX : caption.align === "right" ? qrX + settings.width : outerWidth / 2;
+  const encodedQr = utf8ToBase64(qrSvg);
+  const textElement = captionText
+    ? `<text x="${textX}" y="${qrY + settings.height + captionGap + caption.size}" fill="${caption.color}" font-size="${caption.size}" font-family="Arial, sans-serif" font-weight="${caption.bold ? 800 : 500}" text-anchor="${textAnchor}">${escapeXml(captionText)}</text>`
+    : "";
+  const frameElement = frame.enabled
+    ? `<rect x="${thickness / 2}" y="${thickness / 2}" width="${outerWidth - thickness}" height="${settings.height + (padding + thickness) * 2 - thickness}" rx="${frame.radius}" fill="none" stroke="${frame.color}" stroke-width="${frame.thickness}" />`
+    : "";
+
+  const svg = `<?xml version="1.0" standalone="no"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${outerWidth}" height="${outerHeight}" viewBox="0 0 ${outerWidth} ${outerHeight}">
+  ${frameElement}
+  <image href="data:image/svg+xml;base64,${encodedQr}" x="${qrX}" y="${qrY}" width="${settings.width}" height="${settings.height}" />
+  ${textElement}
+</svg>`;
+
+  return new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+}
+
+async function composeQrRaster(qrBlob: Blob, settings: QRSettings, format: Exclude<ExportFormat, "svg">): Promise<Blob> {
+  const frame = settings.frame;
+  const caption = settings.caption;
+  const padding = frame.enabled ? frame.padding : 0;
+  const thickness = frame.enabled ? frame.thickness : 0;
+  const captionText = caption.text.trim();
+  const captionGap = captionText ? Math.max(8, Math.round(caption.size * 0.6)) : 0;
+  const captionHeight = captionText ? Math.ceil(caption.size * 1.4) : 0;
+  const outerWidth = settings.width + (padding + thickness) * 2;
+  const outerHeight = settings.height + (padding + thickness) * 2 + captionGap + captionHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = outerWidth;
+  canvas.height = outerHeight;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new Error("Canvas недоступен.");
+  }
+
+  if (format === "jpeg" || !settings.transparentBackground) {
+    context.fillStyle = format === "jpeg" ? "#ffffff" : settings.backgroundColor;
+    context.fillRect(0, 0, outerWidth, outerHeight);
+  }
+
+  if (frame.enabled && frame.thickness > 0) {
+    context.strokeStyle = frame.color;
+    context.lineWidth = frame.thickness;
+    drawRoundedRect(context, thickness / 2, thickness / 2, outerWidth - thickness, settings.height + (padding + thickness) * 2 - thickness, frame.radius);
+    context.stroke();
+  }
+
+  const image = await loadImageFromBlob(qrBlob);
+  context.drawImage(image, padding + thickness, padding + thickness, settings.width, settings.height);
+
+  if (captionText) {
+    context.fillStyle = caption.color;
+    context.font = `${caption.bold ? 800 : 500} ${caption.size}px Arial, sans-serif`;
+    context.textAlign = caption.align;
+    context.textBaseline = "alphabetic";
+    const textX = caption.align === "left" ? padding + thickness : caption.align === "right" ? padding + thickness + settings.width : outerWidth / 2;
+    context.fillText(captionText, textX, padding + thickness + settings.height + captionGap + caption.size);
+  }
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Не удалось создать изображение."))), format === "jpeg" ? "image/jpeg" : "image/png", settings.jpegQuality);
+  });
+}
+
+function drawRoundedRect(context: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number): void {
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + safeRadius, y);
+  context.lineTo(x + width - safeRadius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+  context.lineTo(x + width, y + height - safeRadius);
+  context.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+  context.lineTo(x + safeRadius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+  context.lineTo(x, y + safeRadius);
+  context.quadraticCurveTo(x, y, x + safeRadius, y);
+  context.closePath();
+}
+
+function loadImageFromBlob(blob: Blob): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    image.addEventListener("load", () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    });
+    image.addEventListener("error", () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Не удалось подготовить изображение."));
+    });
+    image.src = url;
+  });
+}
+
+function utf8ToBase64(value: string): string {
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+function escapeXml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[char] ?? char);
 }
 
 async function copyBlobToClipboard(blob: Blob, type: string): Promise<void> {
