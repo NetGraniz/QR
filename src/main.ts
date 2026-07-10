@@ -951,10 +951,28 @@ function handleSettingChange(event: Event): void {
   const setting = element.dataset.setting;
   if (!setting) return;
 
+  const openSections = captureOpenSections();
   const value = element instanceof HTMLInputElement && element.type === "checkbox" ? element.checked : element.value;
   setNestedSetting(setting, value);
   render();
+  restoreOpenSections(openSections);
   restoreInputFocus(focusSnapshot);
+}
+
+function captureOpenSections(): string[] {
+  return Array.from(settingsForm.querySelectorAll<HTMLDetailsElement>("details.settings-section[open]"))
+    .map((details) => details.querySelector("summary")?.textContent?.trim() ?? "")
+    .filter(Boolean);
+}
+
+function restoreOpenSections(openSections: string[]): void {
+  const openSet = new Set(openSections);
+  for (const details of settingsForm.querySelectorAll<HTMLDetailsElement>("details.settings-section")) {
+    const summary = details.querySelector("summary")?.textContent?.trim() ?? "";
+    if (openSet.has(summary)) {
+      details.open = true;
+    }
+  }
 }
 
 function setBatchSetting(setting: string, value: string): void {
@@ -1542,15 +1560,8 @@ async function printBarcode(): Promise<void> {
 
 function printBlobImage(blob: Blob, title: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(blob);
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!printWindow) {
-      URL.revokeObjectURL(url);
-      reject(new Error("Браузер заблокировал окно печати."));
-      return;
-    }
-
-    printWindow.document.write(`
+    const imageUrl = URL.createObjectURL(blob);
+    const html = `
       <!doctype html>
       <html lang="ru">
         <head>
@@ -1562,19 +1573,32 @@ function printBlobImage(blob: Blob, title: string): Promise<void> {
           </style>
         </head>
         <body>
-          <img src="${url}" alt="${escapeHtml(title)}" />
+          <img src="${imageUrl}" alt="${escapeHtml(title)}" />
           <script>
             window.addEventListener("load", () => {
-              window.focus();
-              window.print();
+              window.setTimeout(() => {
+                window.focus();
+                window.print();
+              }, 100);
             });
             window.addEventListener("afterprint", () => window.close());
           </script>
         </body>
       </html>
-    `);
-    printWindow.document.close();
-    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+    `;
+    const htmlUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
+    const printWindow = window.open(htmlUrl, "_blank");
+    if (!printWindow) {
+      URL.revokeObjectURL(imageUrl);
+      URL.revokeObjectURL(htmlUrl);
+      reject(new Error("Браузер заблокировал окно печати."));
+      return;
+    }
+
+    window.setTimeout(() => {
+      URL.revokeObjectURL(imageUrl);
+      URL.revokeObjectURL(htmlUrl);
+    }, 30000);
     resolve();
   });
 }

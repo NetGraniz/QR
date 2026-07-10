@@ -4,7 +4,7 @@ import { calculateEan13CheckDigit, hasValidEan13CheckDigit } from "../src/barcod
 import { validateBarcode, validateEan8, validateItf14, validateUpcA } from "../src/barcode/barcodeValidation";
 import { buildEmailPayload, buildSmsPayload, buildVCardPayload, buildWifiPayload } from "../src/qr/qrPayloads";
 import { buildQrOptions, DEFAULT_QR_SETTINGS } from "../src/qr/qrConfig";
-import { configureQrUtf8Encoding } from "../src/qr/qrEncoding";
+import { configureQrUtf8Encoding, encodeQrDataForStyling } from "../src/qr/qrEncoding";
 import { decodeQrBinaryData, getSafeOpenUrl } from "../src/scanner/scanner";
 import { isSafeUrl } from "../src/shared/security";
 import { sanitizeFileName } from "../src/shared/fileNames";
@@ -16,6 +16,10 @@ describe("QR payload generation", () => {
     configureQrUtf8Encoding();
     const qrcode = await import("qrcode-generator");
     assert.deepEqual(qrcode.default.stringToBytes("привет"), Array.from(new TextEncoder().encode("привет")));
+    assert.deepEqual(
+      Array.from(encodeQrDataForStyling("привет"), (char) => char.charCodeAt(0)),
+      Array.from(new TextEncoder().encode("привет")),
+    );
     assert.equal(buildQrOptions(DEFAULT_QR_SETTINGS, "привет").qrOptions?.mode, "Byte");
   });
 

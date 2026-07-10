@@ -6,3 +6,11 @@ export function configureQrUtf8Encoding(): void {
     qrcode.stringToBytes = utf8Encoder;
   }
 }
+
+export function encodeQrDataForStyling(data: string): string {
+  if (typeof TextEncoder === "undefined") {
+    return data;
+  }
+
+  return Array.from(new TextEncoder().encode(data), (byte) => String.fromCharCode(byte)).join("");
+}

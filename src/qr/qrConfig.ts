@@ -1,5 +1,6 @@
 import type { CornerDotType, CornerSquareType, DotType, ErrorCorrectionLevel, Gradient, Options } from "qr-code-styling";
 import type { ExportFormat, QRSettings } from "../shared/types";
+import { encodeQrDataForStyling } from "./qrEncoding";
 
 export const DOT_TYPE_LABELS: Record<DotType, string> = {
   square: "Квадратные",
@@ -118,7 +119,7 @@ export function buildQrOptions(settings: QRSettings, data: string, logo?: string
     width: merged.width,
     height: merged.height,
     type: "svg",
-    data: data || " ",
+    data: data ? encodeQrDataForStyling(data) : " ",
     margin: merged.margin,
     qrOptions: { errorCorrectionLevel: merged.errorCorrectionLevel, mode: "Byte" },
     image: logo,
