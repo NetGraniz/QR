@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { calculateEan13CheckDigit, hasValidEan13CheckDigit } from "../src/barcode/checkDigits";
 import { validateBarcode, validateEan8, validateItf14, validateUpcA } from "../src/barcode/barcodeValidation";
 import { buildEmailPayload, buildSmsPayload, buildVCardPayload, buildWifiPayload } from "../src/qr/qrPayloads";
+import { getSafeOpenUrl } from "../src/scanner/scanner";
 import { isSafeUrl } from "../src/shared/security";
 import { sanitizeFileName } from "../src/shared/fileNames";
 import { loadSettingsFromStorage } from "../src/storage";
@@ -66,6 +67,9 @@ describe("Safety helpers", () => {
   it("rejects unsafe URLs", () => {
     assert.equal(isSafeUrl("javascript:alert(1)"), false);
     assert.equal(isSafeUrl("example.com"), true);
+    assert.equal(getSafeOpenUrl("javascript:alert(1)"), null);
+    assert.equal(getSafeOpenUrl("plain text"), null);
+    assert.equal(getSafeOpenUrl("example.com"), "https://example.com");
   });
 
   it("sanitizes file names", () => {

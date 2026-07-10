@@ -6,6 +6,20 @@ export type ExportFormat = "png" | "jpeg" | "svg";
 export type GradientMode = "solid" | "linear" | "radial";
 export type BarcodeFormat = "CODE128" | "CODE39" | "EAN13" | "EAN8" | "UPCA" | "UPCE" | "ITF14" | "codabar";
 export type TextAlign = "left" | "center" | "right";
+export type ScanSource = "image" | "camera" | "auto";
+
+export type ScanResult = {
+  format: string;
+  value: string;
+  source: ScanSource;
+};
+
+export type ScanOutcome = {
+  results: ScanResult[];
+  detectorAvailable: boolean;
+  fallbackUsed: boolean;
+  message: string;
+};
 
 export type WifiSecurity = "WPA" | "WEP" | "nopass";
 

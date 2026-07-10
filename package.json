@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "jsbarcode": "^3.11.6",
+    "jsqr": "^1.4.0",
     "qr-code-styling": "^1.9.2"
   },
   "devDependencies": {

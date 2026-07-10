@@ -11,6 +11,9 @@ importers:
       jsbarcode:
         specifier: ^3.11.6
         version: 3.12.3
+      jsqr:
+        specifier: ^1.4.0
+        version: 1.4.0
       qr-code-styling:
         specifier: ^1.9.2
         version: 1.9.2
@@ -352,6 +355,9 @@ packages:
   jsbarcode@3.12.3:
     resolution: {integrity: sha512-CuHU9hC6dPsHF5oVFMo8NW76uQVjH4L22CsP4hW+dNnGywJHC/B0ThA1CTDVLnxKLrrpYdicBLnd2xsgTfRnvg==}
 
+  jsqr@1.4.0:
+    resolution: {integrity: sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==}
+
   nanoid@3.3.15:
     resolution: {integrity: sha512-y7Wygv/7mEOvxTuEQDB8StXdMRBWf1kR/tlhAzBRUFkB2jfcLOAxO/SHmOO2zgz1pVgK29/kyupn059/bCHdjA==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
@@ -638,6 +644,8 @@ snapshots:
     optional: true
 
   jsbarcode@3.12.3: {}
+
+  jsqr@1.4.0: {}
 
   nanoid@3.3.15: {}
 

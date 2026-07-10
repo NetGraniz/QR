@@ -25,9 +25,10 @@ import {
 } from "./qr/qrConfig";
 import { buildQrPayload } from "./qr/qrPayloads";
 import { buildReadabilityResult, validateQrPayload } from "./qr/qrValidation";
+import { getSafeOpenUrl, scanImageFile, scanVideoFrame, verifyQrPreview } from "./scanner/scanner";
 import { sanitizeSvg } from "./shared/security";
 import { sanitizeFileName } from "./shared/fileNames";
-import type { AppMode, BarcodeSettings, ExportFormat, PersistedAppState, QRContentType, QRSettings } from "./shared/types";
+import type { AppMode, BarcodeSettings, ExportFormat, PersistedAppState, QRContentType, QRSettings, ScanOutcome, ScanResult } from "./shared/types";
 import { loadSettings, saveSettings } from "./storage";
 import { clampNumber, validateLogoFile } from "./validation";
 
@@ -54,6 +55,12 @@ let logoDataUrl = "";
 let logoFileName = "";
 let qrCode: QRCodeStyling | null = null;
 let barcodeSvg: SVGSVGElement | null = null;
+let scannerPreviewUrl = "";
+let scannerResults: ScanResult[] = [];
+let scannerMessage = "";
+let scannerCameraStream: MediaStream | null = null;
+let scannerCameraTimer: number | null = null;
+let qrVerificationToken = 0;
 
 const app = getRequiredElement<HTMLDivElement>("#app");
 
@@ -137,7 +144,7 @@ function render(): void {
   } else if (state.mode === "barcode") {
     renderBarcodeForm();
   } else {
-    renderPlaceholder("Сканировать код", "Этот режим будет реализован на следующем этапе: загрузка изображения, камера и распознавание через BarcodeDetector.");
+    renderScannerForm();
   }
 
   renderPreview();
@@ -323,6 +330,63 @@ function renderBarcodeForm(): void {
   `;
 }
 
+function renderScannerForm(): void {
+  modeForm.innerHTML = `
+    <details class="settings-section" open>
+      <summary>Изображение</summary>
+      <div class="scanner-dropzone" id="scannerDropzone">
+        <p><strong>Перетащите изображение с кодом сюда</strong></p>
+        <p>Также можно выбрать файл или вставить изображение через Ctrl+V.</p>
+        <label class="file-button" for="scannerImageInput">Выбрать изображение</label>
+        <input id="scannerImageInput" type="file" accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp,.png,.jpg,.jpeg,.svg,.webp" />
+      </div>
+      <div class="download-row">
+        <button class="ghost-button" id="clearScannerButton" type="button">Очистить изображение</button>
+      </div>
+    </details>
+
+    <details class="settings-section" open>
+      <summary>Камера</summary>
+      <div class="download-row">
+        <button class="primary-button" id="startCameraButton" type="button">Включить камеру</button>
+        <button class="ghost-button" id="stopCameraButton" type="button">Остановить камеру</button>
+      </div>
+      <p class="helper-text">Камера использует BarcodeDetector. Если браузер его не поддерживает, загрузите изображение: QR-коды будут проверены резервным модулем.</p>
+    </details>
+
+    <details class="settings-section" open>
+      <summary>Результат</summary>
+      <div class="scanner-result" id="scannerResult">${renderScannerResults()}</div>
+    </details>
+  `;
+}
+
+function renderScannerResults(): string {
+  if (scannerResults.length === 0) {
+    return `<p class="helper-text">${escapeHtml(scannerMessage || "Загрузите изображение или включите камеру, чтобы распознать QR-код или штрихкод.")}</p>`;
+  }
+
+  return scannerResults
+    .map((result, index) => {
+      const safeUrl = getSafeOpenUrl(result.value);
+      return `
+        <article class="scan-result-card">
+          <p><strong>Тип кода:</strong> ${escapeHtml(formatScanFormat(result.format))}</p>
+          <label class="field">
+            <span>Распознанное значение</span>
+            <textarea readonly rows="4">${escapeHtml(result.value)}</textarea>
+          </label>
+          <div class="download-row">
+            <button class="ghost-button" type="button" data-copy-scan="${index}">Копировать</button>
+            ${safeUrl ? `<button class="ghost-button" type="button" data-open-scan="${index}">Открыть ссылку</button>` : ""}
+            <button class="primary-button" type="button" data-create-scan="${index}">Создать новый код</button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
 function renderPayloadFields(qr: QRSettings): string {
   const fields = qr.payloads;
   switch (qr.contentType) {
@@ -437,6 +501,9 @@ function bindEvents(): void {
   modeTabs.addEventListener("click", (event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-mode]");
     if (!button) return;
+    if (state.mode === "scanner" && button.dataset.mode !== "scanner") {
+      stopScannerCamera(false);
+    }
     state.mode = button.dataset.mode as AppMode;
     render();
   });
@@ -482,6 +549,54 @@ function bindEvents(): void {
     if (target.closest("#downloadBarcodeButton")) {
       await downloadCurrentBarcode();
     }
+
+    const copyScanButton = target.closest<HTMLButtonElement>("[data-copy-scan]");
+    if (copyScanButton) {
+      const result = scannerResults[Number(copyScanButton.dataset.copyScan)];
+      if (result) {
+        await navigator.clipboard?.writeText(result.value);
+        setStatus("Распознанное значение скопировано.");
+      }
+      return;
+    }
+
+    const openScanButton = target.closest<HTMLButtonElement>("[data-open-scan]");
+    if (openScanButton) {
+      const result = scannerResults[Number(openScanButton.dataset.openScan)];
+      const safeUrl = result ? getSafeOpenUrl(result.value) : null;
+      if (safeUrl) {
+        window.open(safeUrl, "_blank", "noopener,noreferrer");
+      } else {
+        setStatus("Ссылка не открыта: протокол небезопасен.", true);
+      }
+      return;
+    }
+
+    const createScanButton = target.closest<HTMLButtonElement>("[data-create-scan]");
+    if (createScanButton) {
+      const result = scannerResults[Number(createScanButton.dataset.createScan)];
+      if (result) {
+        createCodeFromScan(result);
+      }
+      return;
+    }
+
+    if (target.closest("#clearScannerButton")) {
+      clearScanner();
+      render();
+      return;
+    }
+
+    if (target.closest("#startCameraButton")) {
+      await startScannerCamera();
+      return;
+    }
+
+    if (target.closest("#stopCameraButton")) {
+      stopScannerCamera();
+      setStatus("Камера остановлена.");
+      render();
+    }
   });
 
   settingsForm.addEventListener("change", async (event) => {
@@ -489,9 +604,49 @@ function bindEvents(): void {
     if (input.id === "logoInput" && input.files?.[0]) {
       await handleLogoUpload(input.files[0]);
     }
+    if (input.id === "scannerImageInput" && input.files?.[0]) {
+      await handleScannerFile(input.files[0]);
+    }
+  });
+
+  settingsForm.addEventListener("dragover", (event) => {
+    if ((event.target as HTMLElement).closest("#scannerDropzone")) {
+      event.preventDefault();
+      getRequiredElement<HTMLDivElement>("#scannerDropzone").classList.add("is-dragging");
+    }
+  });
+
+  settingsForm.addEventListener("dragleave", (event) => {
+    if ((event.target as HTMLElement).closest("#scannerDropzone")) {
+      getRequiredElement<HTMLDivElement>("#scannerDropzone").classList.remove("is-dragging");
+    }
+  });
+
+  settingsForm.addEventListener("drop", async (event) => {
+    if (!(event.target as HTMLElement).closest("#scannerDropzone")) return;
+    event.preventDefault();
+    getRequiredElement<HTMLDivElement>("#scannerDropzone").classList.remove("is-dragging");
+    const file = event.dataTransfer?.files?.[0];
+    if (file) {
+      await handleScannerFile(file);
+    }
+  });
+
+  window.addEventListener("paste", async (event) => {
+    if (state.mode !== "scanner") return;
+    const file = Array.from(event.clipboardData?.files ?? []).find((item) => item.type.startsWith("image/"));
+    if (file) {
+      await handleScannerFile(file);
+    }
   });
 
   resetButton.addEventListener("click", () => {
+    if (state.mode === "scanner") {
+      clearScanner();
+      render();
+      return;
+    }
+
     if (state.mode === "barcode") {
       state.barcode = structuredClone(DEFAULT_BARCODE_SETTINGS);
       render();
@@ -588,6 +743,11 @@ function currentPayload(): string {
 }
 
 function renderPreview(): void {
+  if (state.mode === "scanner") {
+    renderScannerPreview();
+    return;
+  }
+
   if (state.mode === "barcode") {
     renderBarcodePreview();
     return;
@@ -618,6 +778,27 @@ function renderPreview(): void {
   }
 
   renderWarnings(validation.errors, readability, jpegTransparency);
+  queueQrVerification(payload);
+}
+
+function renderScannerPreview(): void {
+  qrCode = null;
+  barcodeSvg = null;
+  qrSizeLabel.textContent = "Сканер";
+  qrStage.classList.remove("is-transparent");
+  warningBox.hidden = true;
+  warningBox.innerHTML = "";
+
+  if (scannerCameraStream) {
+    qrPreview.innerHTML = `<video class="scanner-video" id="scannerVideo" autoplay muted playsinline></video>`;
+    attachCameraPreview();
+  } else if (scannerPreviewUrl) {
+    qrPreview.innerHTML = `<img class="scanner-image" src="${escapeHtml(scannerPreviewUrl)}" alt="Изображение для сканирования" />`;
+  } else {
+    qrPreview.innerHTML = `<div class="scanner-preview-empty">Здесь появится изображение или поток камеры.</div>`;
+  }
+
+  setStatus(scannerMessage || "Готов к сканированию.");
 }
 
 function renderBarcodePreview(): void {
@@ -738,6 +919,166 @@ function defaultBarcodeFileName(settings: BarcodeSettings): string {
   const validation = validateBarcode(settings.format, settings.value);
   const value = validation.valid ? validation.value : settings.value || "code";
   return sanitizeFileName(`barcode-${settings.format.toLowerCase()}-${value}`, "barcode");
+}
+
+async function handleScannerFile(file: File): Promise<void> {
+  stopScannerCamera(false);
+  try {
+    if (scannerPreviewUrl) {
+      URL.revokeObjectURL(scannerPreviewUrl);
+    }
+    const { outcome, previewUrl } = await scanImageFile(file);
+    scannerPreviewUrl = previewUrl;
+    setScannerOutcome(outcome);
+  } catch (error) {
+    scannerResults = [];
+    scannerMessage = error instanceof Error ? error.message : "Не удалось просканировать изображение.";
+    render();
+    setStatus(scannerMessage, true);
+  }
+}
+
+function setScannerOutcome(outcome: ScanOutcome): void {
+  scannerResults = outcome.results;
+  scannerMessage = outcome.message;
+  render();
+  setStatus(outcome.message, outcome.results.length === 0);
+}
+
+function clearScanner(): void {
+  stopScannerCamera(false);
+  if (scannerPreviewUrl) {
+    URL.revokeObjectURL(scannerPreviewUrl);
+  }
+  scannerPreviewUrl = "";
+  scannerResults = [];
+  scannerMessage = "Данные сканера очищены.";
+}
+
+async function startScannerCamera(): Promise<void> {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    setStatus("Камера недоступна в этом браузере.", true);
+    return;
+  }
+
+  try {
+    stopScannerCamera(false);
+    scannerCameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    scannerPreviewUrl = "";
+    scannerResults = [];
+    scannerMessage = "Камера включена. Наведите её на код.";
+    render();
+    startCameraScanLoop();
+  } catch (error) {
+    console.error(error);
+    setStatus("Не удалось получить доступ к камере.", true);
+  }
+}
+
+function stopScannerCamera(shouldRender = true): void {
+  if (scannerCameraTimer !== null) {
+    window.clearInterval(scannerCameraTimer);
+    scannerCameraTimer = null;
+  }
+  scannerCameraStream?.getTracks().forEach((track) => track.stop());
+  scannerCameraStream = null;
+  if (shouldRender) {
+    render();
+  }
+}
+
+function attachCameraPreview(): void {
+  window.setTimeout(async () => {
+    const video = document.querySelector<HTMLVideoElement>("#scannerVideo");
+    if (!video || !scannerCameraStream) return;
+    video.srcObject = scannerCameraStream;
+    try {
+      await video.play();
+    } catch {
+      setStatus("Нажмите на страницу, если браузер заблокировал автозапуск камеры.", true);
+    }
+  }, 0);
+}
+
+function startCameraScanLoop(): void {
+  if (scannerCameraTimer !== null) {
+    window.clearInterval(scannerCameraTimer);
+  }
+
+  scannerCameraTimer = window.setInterval(async () => {
+    const video = document.querySelector<HTMLVideoElement>("#scannerVideo");
+    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      return;
+    }
+
+    try {
+      const outcome = await scanVideoFrame(video);
+      if (outcome.results.length > 0) {
+        scannerResults = outcome.results;
+        scannerMessage = outcome.message;
+        const resultBox = document.querySelector<HTMLDivElement>("#scannerResult");
+        if (resultBox) {
+          resultBox.innerHTML = renderScannerResults();
+        }
+        setStatus(outcome.message);
+      } else if (!outcome.detectorAvailable) {
+        setStatus(outcome.message, true);
+      }
+    } catch (error) {
+      console.error(error);
+      setStatus("Не удалось распознать кадр с камеры.", true);
+    }
+  }, 900);
+}
+
+function createCodeFromScan(result: ScanResult): void {
+  stopScannerCamera(false);
+  if (result.format === "qr_code") {
+    state.mode = "qr";
+    state.qr.contentType = "text";
+    state.qr.payloads.text.text = result.value;
+  } else {
+    state.mode = "barcode";
+    state.barcode.value = result.value;
+  }
+  render();
+  setStatus("Создан новый код из распознанного значения.");
+}
+
+function formatScanFormat(format: string): string {
+  const labels: Record<string, string> = {
+    qr_code: "QR-код",
+    code_128: "Code 128",
+    code_39: "Code 39",
+    ean_13: "EAN-13",
+    ean_8: "EAN-8",
+    upc_a: "UPC-A",
+    upc_e: "UPC-E",
+    itf: "ITF",
+    codabar: "Codabar",
+  };
+  return labels[format] ?? format;
+}
+
+function queueQrVerification(expectedPayload: string): void {
+  const token = ++qrVerificationToken;
+  window.setTimeout(async () => {
+    if (token !== qrVerificationToken || state.mode !== "qr") return;
+    try {
+      const outcome = await verifyQrPreview(qrPreview, expectedPayload);
+      if (token !== qrVerificationToken || state.mode !== "qr") return;
+      if (outcome.results.length > 0) {
+        const matches = outcome.results.some((result) => result.value === expectedPayload);
+        setStatus(matches ? "QR-код успешно распознан" : "QR-код распознан, но значение отличается от исходных данных", !matches);
+      } else {
+        setStatus(outcome.message, true);
+      }
+    } catch {
+      if (token === qrVerificationToken && state.mode === "qr") {
+        setStatus("Автоматическая проверка недоступна в этом браузере.", true);
+      }
+    }
+  }, 250);
 }
 
 function setStatus(message: string, isError = false): void {
