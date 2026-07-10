@@ -95,6 +95,40 @@ h2 {
   box-shadow: 0 10px 26px rgba(37, 99, 235, 0.1);
 }
 
+.mode-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.mode-tab {
+  min-height: 42px;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #334155;
+  font-weight: 800;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.mode-tab:hover,
+.mode-tab:focus-visible {
+  border-color: #93b4ee;
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+.mode-tab.is-active {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
 .studio-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.12fr) minmax(360px, 0.88fr);
@@ -115,6 +149,67 @@ h2 {
   display: grid;
   gap: 18px;
   padding: 22px;
+}
+
+.settings-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.settings-section + .settings-section {
+  margin-top: 16px;
+}
+
+.settings-section > summary {
+  cursor: pointer;
+  padding: 14px 16px;
+  color: #334155;
+  font-weight: 900;
+}
+
+.settings-section > summary:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.28);
+  outline-offset: 2px;
+}
+
+.settings-section > *:not(summary) {
+  margin: 0 16px 16px;
+}
+
+.dynamic-fields {
+  display: grid;
+  gap: 14px;
+}
+
+.payload-output {
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.payload-output summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.empty-mode {
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  padding: 18px;
+  background: #f8fafc;
+}
+
+.empty-mode h3 {
+  margin: 0 0 8px;
+}
+
+.empty-mode p {
+  margin-bottom: 0;
+  color: #475569;
+  line-height: 1.5;
 }
 
 .panel-heading,
@@ -177,6 +272,12 @@ legend {
     transform 150ms ease;
 }
 
+.field input:disabled {
+  cursor: not-allowed;
+  background: #edf2f7;
+  color: #94a3b8;
+}
+
 .field textarea {
   resize: vertical;
   line-height: 1.45;
@@ -203,6 +304,10 @@ legend {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
   gap: 12px;
+}
+
+.is-hidden {
+  display: none !important;
 }
 
 .preset-button,
@@ -345,6 +450,20 @@ legend {
     -10px 0;
   background-size: 20px 20px;
   overflow: auto;
+}
+
+.qr-stage.is-transparent {
+  background:
+    linear-gradient(45deg, rgba(148, 163, 184, 0.28) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(148, 163, 184, 0.28) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.28) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.28) 75%);
+  background-position:
+    0 0,
+    0 12px,
+    12px -12px,
+    -12px 0;
+  background-size: 24px 24px;
 }
 
 #qrPreview {

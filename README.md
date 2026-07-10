@@ -1,27 +1,43 @@
 # QR Code Studio
 
-QR Code Studio is a static frontend generator for beautiful QR codes. It works fully in the browser: no backend, database, authentication, or file uploads to a server.
+QR Code Studio is a lightweight static web app for generating QR codes in the browser. It runs fully on the frontend and is deployable to GitHub Pages.
 
-## Features
+## Current Features
 
-- Live QR preview while editing text or a link.
-- Custom width, height, and margin with safe limits.
-- Dot, background, corner square, and corner dot colors.
-- Dot shapes: `square`, `dots`, `rounded`, `extra-rounded`, `classy`, `classy-rounded`.
-- Corner square and corner dot shape controls.
-- Local logo upload for PNG, JPG, JPEG, and SVG files.
-- Logo size, logo margin, and hide-dots-behind-logo settings.
-- High QR error correction level for better logo reliability.
-- PNG, JPEG, and SVG download formats.
-- Style presets: Classic, Blue Brand, Dark, Soft Rounded, Contrast.
-- Scanability warnings for low contrast, large logos, and small QR sizes.
-- Settings persistence in `localStorage`.
+- QR modes: URL, plain text, Wi-Fi, vCard, phone, email, SMS, geo coordinates, and calendar event.
+- Live QR preview with styled dots, corners, logo support, and presets.
+- Safe URL validation for URL QR codes.
+- Wi-Fi payload escaping.
+- vCard, `mailto:`, `sms:`, `geo:`, and iCalendar payload generation.
+- Transparent background for PNG/SVG.
+- JPEG fallback warning because JPEG does not support transparency.
+- Solid color, linear gradient, and radial gradient for QR dots.
+- Separate colors for outer corner squares and inner corner dots.
+- Error correction level selector: L, M, Q, H.
+- Readability warnings with contrast ratio and final readability rating.
+- PNG, JPEG, and SVG export.
+- Local settings persistence in `localStorage`.
+
+## Planned Next Stages
+
+- Barcode generator with Code 128, Code 39, EAN/UPC, ITF-14, and Codabar.
+- Scanner mode using BarcodeDetector with fallback where possible.
+- IndexedDB history.
+- User style templates.
+- CSV batch generation.
+- PWA manifest and offline cache.
+
+## Privacy
+
+All data is processed locally in the browser and is not sent to a server. The project does not use analytics, ads, trackers, authentication, backend storage, or paid APIs.
 
 ## Commands
 
 ```bash
 npm install
 npm run dev
+npm run typecheck
+npm run test
 npm run build
 ```
 
@@ -29,25 +45,46 @@ Use `npm run preview` to preview the production build locally.
 
 ## GitHub Pages
 
-The Vite config uses `base: "./"`, so the built files work under a repository path such as `https://netgraniz.github.io/QR/`.
+The Vite config uses `base: "./"`, so the built files work under:
 
-This repository includes `.github/workflows/pages.yml`. Push the project to the `main` branch, then enable GitHub Pages with **GitHub Actions** as the source in the repository settings.
+```text
+https://netgraniz.github.io/QR/
+```
 
-For manual publishing:
-
-1. Run `npm run build`.
-2. Publish the contents of `dist` with GitHub Pages.
-3. In GitHub repository settings, select the branch or deployment workflow that serves the generated static files.
+The repository includes `.github/workflows/pages.yml`, which builds the app and publishes `dist`.
 
 ## Project Structure
 
 ```text
 src/
-  main.ts            App entry point and UI event wiring.
-  qrConfig.ts        QR defaults, presets, and option builders.
-  storage.ts         localStorage load/save helpers.
-  validation.ts      Input, logo file, contrast, and scanability checks.
-  styles.css         Responsive app styling.
+  main.ts
+  styles.css
+  qr/
+    qrConfig.ts
+    qrPayloads.ts
+    qrValidation.ts
+  barcode/
+    barcodeValidation.ts
+    checkDigits.ts
+  shared/
+    fileNames.ts
+    security.ts
+    types.ts
+  templates/
+    templateValidation.ts
+  storage.ts
+  validation.ts
+tests/
+  run-tests.ts
+scripts/
+  run-tests.mjs
 .github/workflows/
-  pages.yml          GitHub Pages deployment workflow.
+  pages.yml
 ```
+
+## Libraries
+
+- Vite
+- TypeScript
+- `qr-code-styling`
+- Node built-in test runner for automated tests
