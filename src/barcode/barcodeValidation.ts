@@ -1,6 +1,5 @@
+import type { BarcodeFormat } from "../shared/types";
 import { calculateEan13CheckDigit, calculateModulo10CheckDigit, hasValidEan13CheckDigit } from "./checkDigits";
-
-export type BarcodeFormat = "CODE128" | "CODE39" | "EAN13" | "EAN8" | "UPCA" | "UPCE" | "ITF14" | "codabar";
 
 export type BarcodeValidation = {
   valid: boolean;
@@ -46,6 +45,13 @@ export function validateUpcA(value: string): BarcodeValidation {
     : { valid: false, value, error: "Контрольная цифра UPC-A указана неверно" };
 }
 
+export function validateUpcE(value: string): BarcodeValidation {
+  if (!/^\d{6,8}$/.test(value)) {
+    return { valid: false, value, error: "UPC-E должен содержать 6, 7 или 8 цифр" };
+  }
+  return { valid: true, value };
+}
+
 export function validateItf14(value: string): BarcodeValidation {
   if (!/^\d{13,14}$/.test(value)) {
     return { valid: false, value, error: "ITF-14 должен содержать 13 или 14 цифр" };
@@ -59,7 +65,44 @@ export function validateItf14(value: string): BarcodeValidation {
 }
 
 export function validateCode39(value: string): BarcodeValidation {
-  return /^[0-9A-Z .$/+%-]+$/.test(value)
-    ? { valid: true, value }
+  const normalized = value.toUpperCase();
+  return /^[0-9A-Z .$/+%-]+$/.test(normalized)
+    ? { valid: true, value: normalized }
     : { valid: false, value, error: "Code 39 содержит неподдерживаемые символы" };
+}
+
+export function validateCode128(value: string): BarcodeValidation {
+  return value.length > 0
+    ? { valid: true, value }
+    : { valid: false, value, error: "Введите значение для штрихкода" };
+}
+
+export function validateCodabar(value: string): BarcodeValidation {
+  const normalized = value.toUpperCase();
+  return /^[ABCD][0-9\-$:/.+]+[ABCD]$/.test(normalized)
+    ? { valid: true, value: normalized }
+    : { valid: false, value, error: "Codabar должен начинаться и заканчиваться буквами A, B, C или D" };
+}
+
+export function validateBarcode(format: BarcodeFormat, rawValue: string): BarcodeValidation {
+  const value = rawValue.trim();
+
+  switch (format) {
+    case "CODE128":
+      return validateCode128(value);
+    case "CODE39":
+      return validateCode39(value);
+    case "EAN13":
+      return validateEan13(value);
+    case "EAN8":
+      return validateEan8(value);
+    case "UPCA":
+      return validateUpcA(value);
+    case "UPCE":
+      return validateUpcE(value);
+    case "ITF14":
+      return validateItf14(value);
+    case "codabar":
+      return validateCodabar(value);
+  }
 }

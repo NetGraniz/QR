@@ -394,6 +394,13 @@ legend {
   font-size: 0.9rem;
 }
 
+.helper-text {
+  margin-bottom: 0;
+  color: #64748b;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 .toggle-field {
   display: flex;
   min-height: 46px;
@@ -479,6 +486,11 @@ legend {
   height: auto;
   border-radius: 8px;
   box-shadow: 0 16px 32px rgba(15, 23, 42, 0.14);
+}
+
+#qrPreview svg[aria-label^="Штрихкод"] {
+  max-width: min(100%, 520px);
+  border-radius: 6px;
 }
 
 .message-stack {

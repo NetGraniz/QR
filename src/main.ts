@@ -1,6 +1,16 @@
 import QRCodeStyling from "qr-code-styling";
 import "./styles.css";
 import {
+  BARCODE_DOWNLOAD_FORMATS,
+  BARCODE_FORMAT_LABELS,
+  BARCODE_FORMATS,
+  DEFAULT_BARCODE_SETTINGS,
+  TEXT_ALIGN_LABELS,
+  BARCODE_TEXT_ALIGNMENTS,
+} from "./barcode/barcodeConfig";
+import { downloadBarcode, renderBarcode } from "./barcode/barcodeGenerator";
+import { validateBarcode } from "./barcode/barcodeValidation";
+import {
   CORNER_DOT_LABELS,
   CORNER_DOT_TYPES,
   CORNER_SQUARE_LABELS,
@@ -17,7 +27,7 @@ import { buildQrPayload } from "./qr/qrPayloads";
 import { buildReadabilityResult, validateQrPayload } from "./qr/qrValidation";
 import { sanitizeSvg } from "./shared/security";
 import { sanitizeFileName } from "./shared/fileNames";
-import type { AppMode, ExportFormat, PersistedAppState, QRContentType, QRSettings } from "./shared/types";
+import type { AppMode, BarcodeSettings, ExportFormat, PersistedAppState, QRContentType, QRSettings } from "./shared/types";
 import { loadSettings, saveSettings } from "./storage";
 import { clampNumber, validateLogoFile } from "./validation";
 
@@ -43,6 +53,7 @@ let state: PersistedAppState = loadSettings();
 let logoDataUrl = "";
 let logoFileName = "";
 let qrCode: QRCodeStyling | null = null;
+let barcodeSvg: SVGSVGElement | null = null;
 
 const app = getRequiredElement<HTMLDivElement>("#app");
 
@@ -124,7 +135,7 @@ function render(): void {
   if (state.mode === "qr") {
     renderQrForm();
   } else if (state.mode === "barcode") {
-    renderPlaceholder("Генератор штрихкодов", "Этот режим будет реализован на следующем этапе: форматы Code 128, Code 39, EAN/UPC, ITF-14 и Codabar.");
+    renderBarcodeForm();
   } else {
     renderPlaceholder("Сканировать код", "Этот режим будет реализован на следующем этапе: загрузка изображения, камера и распознавание через BarcodeDetector.");
   }
@@ -250,6 +261,68 @@ function renderQrForm(): void {
   payloadOutput.value = currentPayload();
 }
 
+function renderBarcodeForm(): void {
+  const barcode = state.barcode;
+  modeForm.innerHTML = `
+    <details class="settings-section" open>
+      <summary>Данные</summary>
+      <div class="control-grid">
+        ${barcodeSelectField("format", "Формат штрихкода", barcode.format, BARCODE_FORMATS.map((value) => [value, BARCODE_FORMAT_LABELS[value]]))}
+        ${barcodeTextField("value", "Значение", barcode.value, "1234567890")}
+      </div>
+      <div class="download-row">
+        <button class="ghost-button" id="clearBarcodeButton" type="button">Очистить</button>
+        <p class="helper-text">Для EAN, UPC и ITF контрольная цифра рассчитывается автоматически, если введена основная часть значения.</p>
+      </div>
+    </details>
+
+    <details class="settings-section" open>
+      <summary>Оформление</summary>
+      <div class="control-grid">
+        ${barcodeNumberField("width", "Ширина штриха", barcode.width, 1, 6, 0.1)}
+        ${barcodeNumberField("height", "Высота, px", barcode.height, 40, 260, 5)}
+        ${barcodeNumberField("margin", "Внешний отступ, px", barcode.margin, 0, 80, 1)}
+      </div>
+      <div class="control-grid">
+        ${barcodeColorField("lineColor", "Цвет штрихов", barcode.lineColor)}
+        ${barcodeColorField("backgroundColor", "Цвет фона", barcode.backgroundColor, barcode.transparentBackground)}
+      </div>
+      <label class="toggle-field">
+        <input type="checkbox" data-barcode-setting="transparentBackground" ${barcode.transparentBackground ? "checked" : ""} />
+        <span>Прозрачный фон</span>
+      </label>
+    </details>
+
+    <details class="settings-section" open>
+      <summary>Подпись значения</summary>
+      <label class="toggle-field">
+        <input type="checkbox" data-barcode-setting="displayValue" ${barcode.displayValue ? "checked" : ""} />
+        <span>Показывать значение под штрихкодом</span>
+      </label>
+      <div class="control-grid">
+        ${barcodeNumberField("fontSize", "Размер текста, px", barcode.fontSize, 10, 32, 1)}
+        ${barcodeNumberField("textMargin", "Отступ текста, px", barcode.textMargin, 0, 30, 1)}
+        ${barcodeSelectField("textAlign", "Выравнивание текста", barcode.textAlign, BARCODE_TEXT_ALIGNMENTS.map((value) => [value, TEXT_ALIGN_LABELS[value]]))}
+      </div>
+      <label class="toggle-field">
+        <input type="checkbox" data-barcode-setting="fontBold" ${barcode.fontBold ? "checked" : ""} />
+        <span>Жирное начертание</span>
+      </label>
+    </details>
+
+    <details class="settings-section" open>
+      <summary>Экспорт</summary>
+      <div class="control-grid">
+        ${barcodeSelectField("downloadFormat", "Формат", barcode.downloadFormat, BARCODE_DOWNLOAD_FORMATS.map((value) => [value, value.toUpperCase()]))}
+        ${barcodeSelectField("exportScale", "Масштаб PNG", String(barcode.exportScale), [["1", "1×"], ["2", "2×"], ["4", "4×"]])}
+        ${barcodeRangeField("jpegQuality", "Качество JPEG", barcode.jpegQuality, 0.6, 1, 0.01, `${Math.round(barcode.jpegQuality * 100)}%`)}
+      </div>
+      ${barcodeTextField("fileName", "Имя файла", barcode.fileName, defaultBarcodeFileName(barcode))}
+      <button class="primary-button" id="downloadBarcodeButton" type="button">Скачать штрихкод</button>
+    </details>
+  `;
+}
+
 function renderPayloadFields(qr: QRSettings): string {
   const fields = qr.payloads;
   switch (qr.contentType) {
@@ -333,6 +406,33 @@ function selectField(setting: string, label: string, selected: string, options: 
   `;
 }
 
+function barcodeTextField(setting: string, label: string, value: string, placeholder = ""): string {
+  return `<label class="field"><span>${label}</span><input data-barcode-setting="${setting}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" /></label>`;
+}
+
+function barcodeNumberField(setting: string, label: string, value: number, min: number, max: number, step: number): string {
+  return `<label class="field"><span>${label}</span><input type="number" data-barcode-setting="${setting}" value="${value}" min="${min}" max="${max}" step="${step}" /></label>`;
+}
+
+function barcodeRangeField(setting: string, label: string, value: number, min: number, max: number, step: number, suffix: string): string {
+  return `<label class="field"><span>${label} <b>${suffix}</b></span><input type="range" data-barcode-setting="${setting}" value="${value}" min="${min}" max="${max}" step="${step}" /></label>`;
+}
+
+function barcodeColorField(setting: string, label: string, value: string, disabled = false): string {
+  return `<label class="field color-field"><span>${label}</span><input type="color" data-barcode-setting="${setting}" value="${value}" ${disabled ? "disabled" : ""} /></label>`;
+}
+
+function barcodeSelectField(setting: string, label: string, selected: string, options: Array<[string, string]>): string {
+  return `
+    <label class="field">
+      <span>${label}</span>
+      <select data-barcode-setting="${setting}">
+        ${options.map(([value, optionLabel]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`).join("")}
+      </select>
+    </label>
+  `;
+}
+
 function bindEvents(): void {
   modeTabs.addEventListener("click", (event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-mode]");
@@ -371,6 +471,17 @@ function bindEvents(): void {
     if (target.closest("#downloadButton")) {
       await downloadQr();
     }
+
+    if (target.closest("#clearBarcodeButton")) {
+      state.barcode.value = "";
+      render();
+      setStatus("Значение штрихкода очищено.");
+      return;
+    }
+
+    if (target.closest("#downloadBarcodeButton")) {
+      await downloadCurrentBarcode();
+    }
   });
 
   settingsForm.addEventListener("change", async (event) => {
@@ -381,6 +492,12 @@ function bindEvents(): void {
   });
 
   resetButton.addEventListener("click", () => {
+    if (state.mode === "barcode") {
+      state.barcode = structuredClone(DEFAULT_BARCODE_SETTINGS);
+      render();
+      return;
+    }
+
     const payloads = state.qr.payloads;
     const contentType = state.qr.contentType;
     state.qr = { ...structuredClone(DEFAULT_QR_SETTINGS), payloads, contentType };
@@ -392,12 +509,33 @@ function bindEvents(): void {
 
 function handleSettingChange(event: Event): void {
   const element = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+  const barcodeSetting = element.dataset.barcodeSetting;
+  if (barcodeSetting) {
+    const value = element instanceof HTMLInputElement && element.type === "checkbox" ? element.checked : element.value;
+    setNestedBarcodeSetting(barcodeSetting, value);
+    render();
+    return;
+  }
+
   const setting = element.dataset.setting;
   if (!setting) return;
 
   const value = element instanceof HTMLInputElement && element.type === "checkbox" ? element.checked : element.value;
   setNestedSetting(setting, value);
   render();
+}
+
+function setNestedBarcodeSetting(path: string, value: string | boolean): void {
+  const barcode = state.barcode as unknown as Record<string, unknown>;
+
+  if (path === "width") barcode[path] = clampNumber(value, 1, 6, DEFAULT_BARCODE_SETTINGS.width);
+  else if (path === "height") barcode[path] = clampNumber(value, 40, 260, DEFAULT_BARCODE_SETTINGS.height);
+  else if (path === "margin") barcode[path] = clampNumber(value, 0, 80, DEFAULT_BARCODE_SETTINGS.margin);
+  else if (path === "fontSize") barcode[path] = clampNumber(value, 10, 32, DEFAULT_BARCODE_SETTINGS.fontSize);
+  else if (path === "textMargin") barcode[path] = clampNumber(value, 0, 30, DEFAULT_BARCODE_SETTINGS.textMargin);
+  else if (path === "jpegQuality") barcode[path] = clampNumber(value, 0.6, 1, DEFAULT_BARCODE_SETTINGS.jpegQuality);
+  else if (path === "exportScale") barcode[path] = Number(value) as 1 | 2 | 4;
+  else barcode[path] = value;
 }
 
 function setNestedSetting(path: string, value: string | boolean): void {
@@ -450,6 +588,11 @@ function currentPayload(): string {
 }
 
 function renderPreview(): void {
+  if (state.mode === "barcode") {
+    renderBarcodePreview();
+    return;
+  }
+
   if (state.mode !== "qr") return;
 
   const payload = currentPayload();
@@ -475,6 +618,45 @@ function renderPreview(): void {
   }
 
   renderWarnings(validation.errors, readability, jpegTransparency);
+}
+
+function renderBarcodePreview(): void {
+  const validation = validateBarcode(state.barcode.format, state.barcode.value);
+  qrCode = null;
+  qrSizeLabel.textContent = BARCODE_FORMAT_LABELS[state.barcode.format];
+  qrStage.classList.toggle("is-transparent", state.barcode.transparentBackground);
+  warningBox.hidden = true;
+  warningBox.innerHTML = "";
+  qrPreview.innerHTML = "";
+
+  if (!validation.valid) {
+    barcodeSvg = null;
+    setStatus(validation.error ?? "Проверьте значение штрихкода.", true);
+    return;
+  }
+
+  try {
+    barcodeSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    barcodeSvg.setAttribute("role", "img");
+    barcodeSvg.setAttribute("aria-label", `Штрихкод ${BARCODE_FORMAT_LABELS[state.barcode.format]}`);
+    renderBarcode(barcodeSvg, state.barcode, validation.value);
+    qrPreview.append(barcodeSvg);
+
+    const jpegTransparency = state.barcode.transparentBackground && state.barcode.downloadFormat === "jpeg";
+    if (jpegTransparency) {
+      warningBox.hidden = false;
+      const paragraph = document.createElement("p");
+      paragraph.textContent = "Формат JPEG не поддерживает прозрачность. При скачивании будет использован белый фон";
+      warningBox.append(paragraph);
+    }
+
+    const autoDigit = validation.value !== state.barcode.value.trim() ? ` Итоговое значение: ${validation.value}.` : "";
+    setStatus(`Штрихкод готов.${autoDigit}`);
+  } catch (error) {
+    console.error(error);
+    barcodeSvg = null;
+    setStatus("Не удалось сгенерировать штрихкод. Проверьте формат и значение.", true);
+  }
 }
 
 function renderWarnings(errors: string[], readability: ReturnType<typeof buildReadabilityResult>, jpegTransparency: boolean): void {
@@ -525,6 +707,37 @@ async function downloadQr(): Promise<void> {
       renderPreview();
     }
   }
+}
+
+async function downloadCurrentBarcode(): Promise<void> {
+  const validation = validateBarcode(state.barcode.format, state.barcode.value);
+  if (!validation.valid) {
+    setStatus(validation.error ?? "Проверьте значение штрихкода.", true);
+    return;
+  }
+
+  if (!barcodeSvg) {
+    renderBarcodePreview();
+  }
+
+  if (!barcodeSvg) {
+    setStatus("Не удалось подготовить штрихкод для скачивания.", true);
+    return;
+  }
+
+  try {
+    await downloadBarcode(barcodeSvg, state.barcode, validation.value);
+    setStatus("Штрихкод скачан.");
+  } catch (error) {
+    console.error(error);
+    setStatus("Не удалось скачать штрихкод.", true);
+  }
+}
+
+function defaultBarcodeFileName(settings: BarcodeSettings): string {
+  const validation = validateBarcode(settings.format, settings.value);
+  const value = validation.valid ? validation.value : settings.value || "code";
+  return sanitizeFileName(`barcode-${settings.format.toLowerCase()}-${value}`, "barcode");
 }
 
 function setStatus(message: string, isError = false): void {

@@ -1,6 +1,6 @@
 # QR Code Studio
 
-QR Code Studio is a lightweight static web app for generating QR codes in the browser. It runs fully on the frontend and is deployable to GitHub Pages.
+QR Code Studio is a lightweight static web app for generating QR codes and linear barcodes in the browser. It runs fully on the frontend and is deployable to GitHub Pages.
 
 ## Current Features
 
@@ -16,11 +16,14 @@ QR Code Studio is a lightweight static web app for generating QR codes in the br
 - Error correction level selector: L, M, Q, H.
 - Readability warnings with contrast ratio and final readability rating.
 - PNG, JPEG, and SVG export.
+- Barcode generator for Code 128, Code 39, EAN-13, EAN-8, UPC-A, UPC-E, ITF-14, and Codabar.
+- Barcode validation with automatic check digit calculation for EAN-13, EAN-8, UPC-A, and ITF-14 where the format allows it.
+- Barcode styling: bar width, height, colors, transparent background, margins, value text, text size, bold text, and alignment.
+- Barcode export to PNG, JPEG, and SVG with PNG scale options.
 - Local settings persistence in `localStorage`.
 
 ## Planned Next Stages
 
-- Barcode generator with Code 128, Code 39, EAN/UPC, ITF-14, and Codabar.
 - Scanner mode using BarcodeDetector with fallback where possible.
 - IndexedDB history.
 - User style templates.
@@ -64,6 +67,8 @@ src/
     qrPayloads.ts
     qrValidation.ts
   barcode/
+    barcodeConfig.ts
+    barcodeGenerator.ts
     barcodeValidation.ts
     checkDigits.ts
   shared/
@@ -87,4 +92,5 @@ scripts/
 - Vite
 - TypeScript
 - `qr-code-styling`
+- `jsbarcode`
 - Node built-in test runner for automated tests

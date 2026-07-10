@@ -1,5 +1,6 @@
 import { DEFAULT_QR_SETTINGS } from "./qr/qrConfig";
-import type { AppMode, PersistedAppState, QRSettings } from "./shared/types";
+import { DEFAULT_BARCODE_SETTINGS } from "./barcode/barcodeConfig";
+import type { AppMode, BarcodeSettings, PersistedAppState, QRSettings } from "./shared/types";
 import { clampNumber, isHexColor } from "./validation";
 
 const STORAGE_KEY = "qr-code-studio-settings-v2";
@@ -40,18 +41,37 @@ function mergeQrSettings(value: unknown): QRSettings {
   } as QRSettings;
 }
 
+function mergeBarcodeSettings(value: unknown): BarcodeSettings {
+  if (!isRecord(value)) {
+    return structuredClone(DEFAULT_BARCODE_SETTINGS);
+  }
+
+  return {
+    ...structuredClone(DEFAULT_BARCODE_SETTINGS),
+    ...value,
+    width: clampNumber(value.width, 1, 6, DEFAULT_BARCODE_SETTINGS.width),
+    height: clampNumber(value.height, 40, 260, DEFAULT_BARCODE_SETTINGS.height),
+    margin: clampNumber(value.margin, 0, 80, DEFAULT_BARCODE_SETTINGS.margin),
+    fontSize: clampNumber(value.fontSize, 10, 32, DEFAULT_BARCODE_SETTINGS.fontSize),
+    textMargin: clampNumber(value.textMargin, 0, 30, DEFAULT_BARCODE_SETTINGS.textMargin),
+    jpegQuality: clampNumber(value.jpegQuality, 0.6, 1, DEFAULT_BARCODE_SETTINGS.jpegQuality),
+    lineColor: isHexColor(value.lineColor) ? value.lineColor : DEFAULT_BARCODE_SETTINGS.lineColor,
+    backgroundColor: isHexColor(value.backgroundColor) ? value.backgroundColor : DEFAULT_BARCODE_SETTINGS.backgroundColor,
+  } as BarcodeSettings;
+}
+
 export function loadSettings(): PersistedAppState {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return { mode: "qr", qr: structuredClone(DEFAULT_QR_SETTINGS) };
+      return { mode: "qr", qr: structuredClone(DEFAULT_QR_SETTINGS), barcode: structuredClone(DEFAULT_BARCODE_SETTINGS) };
     }
 
     const parsed = JSON.parse(raw) as Partial<PersistedAppState>;
     const mode: AppMode = parsed.mode === "barcode" || parsed.mode === "scanner" ? parsed.mode : "qr";
-    return { mode, qr: mergeQrSettings(parsed.qr) };
+    return { mode, qr: mergeQrSettings(parsed.qr), barcode: mergeBarcodeSettings(parsed.barcode) };
   } catch {
-    return { mode: "qr", qr: structuredClone(DEFAULT_QR_SETTINGS) };
+    return { mode: "qr", qr: structuredClone(DEFAULT_QR_SETTINGS), barcode: structuredClone(DEFAULT_BARCODE_SETTINGS) };
   }
 }
 
@@ -62,8 +82,12 @@ export function saveSettings(settings: PersistedAppState): void {
 export function loadSettingsFromStorage(storage: Pick<Storage, "getItem">): PersistedAppState {
   try {
     const raw = storage.getItem(STORAGE_KEY);
-    return raw ? { mode: "qr", qr: mergeQrSettings((JSON.parse(raw) as PersistedAppState).qr) } : { mode: "qr", qr: structuredClone(DEFAULT_QR_SETTINGS) };
+    if (!raw) {
+      return { mode: "qr", qr: structuredClone(DEFAULT_QR_SETTINGS), barcode: structuredClone(DEFAULT_BARCODE_SETTINGS) };
+    }
+    const parsed = JSON.parse(raw) as PersistedAppState;
+    return { mode: "qr", qr: mergeQrSettings(parsed.qr), barcode: mergeBarcodeSettings(parsed.barcode) };
   } catch {
-    return { mode: "qr", qr: structuredClone(DEFAULT_QR_SETTINGS) };
+    return { mode: "qr", qr: structuredClone(DEFAULT_QR_SETTINGS), barcode: structuredClone(DEFAULT_BARCODE_SETTINGS) };
   }
 }

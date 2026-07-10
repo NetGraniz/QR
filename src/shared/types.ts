@@ -4,6 +4,8 @@ export type AppMode = "qr" | "barcode" | "scanner";
 export type QRContentType = "url" | "text" | "wifi" | "vcard" | "phone" | "email" | "sms" | "geo" | "event";
 export type ExportFormat = "png" | "jpeg" | "svg";
 export type GradientMode = "solid" | "linear" | "radial";
+export type BarcodeFormat = "CODE128" | "CODE39" | "EAN13" | "EAN8" | "UPCA" | "UPCE" | "ITF14" | "codabar";
+export type TextAlign = "left" | "center" | "right";
 
 export type WifiSecurity = "WPA" | "WEP" | "nopass";
 
@@ -75,7 +77,28 @@ export type QRSettings = {
   caption: QRCaptionSettings;
 };
 
+export type BarcodeSettings = {
+  format: BarcodeFormat;
+  value: string;
+  width: number;
+  height: number;
+  lineColor: string;
+  backgroundColor: string;
+  transparentBackground: boolean;
+  margin: number;
+  displayValue: boolean;
+  fontSize: number;
+  fontBold: boolean;
+  textMargin: number;
+  textAlign: TextAlign;
+  downloadFormat: ExportFormat;
+  exportScale: 1 | 2 | 4;
+  jpegQuality: number;
+  fileName: string;
+};
+
 export type PersistedAppState = {
   mode: AppMode;
   qr: QRSettings;
+  barcode: BarcodeSettings;
 };
