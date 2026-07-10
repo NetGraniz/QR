@@ -931,19 +931,23 @@ function bindEvents(): void {
 
 function handleSettingChange(event: Event): void {
   const element = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+  const openSections = captureOpenSections();
+  const focusSnapshot = captureInputFocus(element);
   const batchSetting = element.dataset.batchSetting;
   if (batchSetting) {
     setBatchSetting(batchSetting, element.value);
     render();
+    restoreOpenSections(openSections);
+    restoreInputFocus(focusSnapshot);
     return;
   }
 
-  const focusSnapshot = captureInputFocus(element);
   const barcodeSetting = element.dataset.barcodeSetting;
   if (barcodeSetting) {
     const value = element instanceof HTMLInputElement && element.type === "checkbox" ? element.checked : element.value;
     setNestedBarcodeSetting(barcodeSetting, value);
     render();
+    restoreOpenSections(openSections);
     restoreInputFocus(focusSnapshot);
     return;
   }
@@ -951,7 +955,6 @@ function handleSettingChange(event: Event): void {
   const setting = element.dataset.setting;
   if (!setting) return;
 
-  const openSections = captureOpenSections();
   const value = element instanceof HTMLInputElement && element.type === "checkbox" ? element.checked : element.value;
   setNestedSetting(setting, value);
   render();
@@ -983,17 +986,17 @@ function setBatchSetting(setting: string, value: string): void {
 }
 
 type InputFocusSnapshot = {
-  attribute: "data-setting" | "data-barcode-setting";
+  attribute: "data-setting" | "data-barcode-setting" | "data-batch-setting";
   value: string;
   selectionStart: number | null;
   selectionEnd: number | null;
 } | null;
 
 function captureInputFocus(element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement): InputFocusSnapshot {
-  const value = element.dataset.barcodeSetting ?? element.dataset.setting;
+  const value = element.dataset.barcodeSetting ?? element.dataset.batchSetting ?? element.dataset.setting;
   if (!value) return null;
 
-  const attribute = element.dataset.barcodeSetting ? "data-barcode-setting" : "data-setting";
+  const attribute = element.dataset.barcodeSetting ? "data-barcode-setting" : element.dataset.batchSetting ? "data-batch-setting" : "data-setting";
   let selectionStart: number | null = null;
   let selectionEnd: number | null = null;
 
@@ -1328,7 +1331,7 @@ async function composeQrSvg(qrBlob: Blob, settings: QRSettings): Promise<Blob> {
   const padding = frame.enabled ? frame.padding : 0;
   const thickness = frame.enabled ? frame.thickness : 0;
   const captionText = caption.text.trim();
-  const captionGap = captionText ? Math.max(8, Math.round(caption.size * 0.6)) : 0;
+  const captionGap = captionText ? Math.max(12, Math.round(caption.size * 0.75), Math.ceil(thickness / 2) + 4) : 0;
   const captionHeight = captionText ? Math.ceil(caption.size * 1.4) : 0;
   const outerWidth = settings.width + (padding + thickness) * 2;
   const outerHeight = settings.height + (padding + thickness) * 2 + captionGap + captionHeight;
@@ -1341,7 +1344,7 @@ async function composeQrSvg(qrBlob: Blob, settings: QRSettings): Promise<Blob> {
     ? `<text x="${textX}" y="${qrY + settings.height + captionGap + caption.size}" fill="${caption.color}" font-size="${caption.size}" font-family="Arial, sans-serif" font-weight="${caption.bold ? 800 : 500}" text-anchor="${textAnchor}">${escapeXml(captionText)}</text>`
     : "";
   const frameElement = frame.enabled
-    ? `<rect x="${thickness / 2}" y="${thickness / 2}" width="${outerWidth - thickness}" height="${settings.height + (padding + thickness) * 2 - thickness}" rx="${frame.radius}" fill="none" stroke="${frame.color}" stroke-width="${frame.thickness}" />`
+    ? `<rect x="${thickness / 2}" y="${thickness / 2}" width="${outerWidth - thickness}" height="${outerHeight - thickness}" rx="${frame.radius}" fill="none" stroke="${frame.color}" stroke-width="${frame.thickness}" />`
     : "";
 
   const svg = `<?xml version="1.0" standalone="no"?>
@@ -1360,7 +1363,7 @@ async function composeQrRaster(qrBlob: Blob, settings: QRSettings, format: Exclu
   const padding = frame.enabled ? frame.padding : 0;
   const thickness = frame.enabled ? frame.thickness : 0;
   const captionText = caption.text.trim();
-  const captionGap = captionText ? Math.max(8, Math.round(caption.size * 0.6)) : 0;
+  const captionGap = captionText ? Math.max(12, Math.round(caption.size * 0.75), Math.ceil(thickness / 2) + 4) : 0;
   const captionHeight = captionText ? Math.ceil(caption.size * 1.4) : 0;
   const outerWidth = settings.width + (padding + thickness) * 2;
   const outerHeight = settings.height + (padding + thickness) * 2 + captionGap + captionHeight;
@@ -1380,7 +1383,7 @@ async function composeQrRaster(qrBlob: Blob, settings: QRSettings, format: Exclu
   if (frame.enabled && frame.thickness > 0) {
     context.strokeStyle = frame.color;
     context.lineWidth = frame.thickness;
-    drawRoundedRect(context, thickness / 2, thickness / 2, outerWidth - thickness, settings.height + (padding + thickness) * 2 - thickness, frame.radius);
+    drawRoundedRect(context, thickness / 2, thickness / 2, outerWidth - thickness, outerHeight - thickness, frame.radius);
     context.stroke();
   }
 
@@ -1587,7 +1590,7 @@ function printBlobImage(blob: Blob, title: string): Promise<void> {
       </html>
     `;
     const htmlUrl = URL.createObjectURL(new Blob([html], { type: "text/html;charset=utf-8" }));
-    const printWindow = window.open(htmlUrl, "_blank");
+    const printWindow = window.open(htmlUrl, "_blank", "noopener,noreferrer") ?? ({ closed: false } as Window);
     if (!printWindow) {
       URL.revokeObjectURL(imageUrl);
       URL.revokeObjectURL(htmlUrl);
