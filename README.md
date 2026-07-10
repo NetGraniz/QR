@@ -26,7 +26,7 @@ QR Code Studio is a lightweight static web app for generating QR codes and linea
 - Safe scan actions: copy result, open only safe links, or create a new code from the scanned value.
 - Local IndexedDB history with open, duplicate, rename, delete, and clear actions.
 - User style templates with save, apply, rename, delete, JSON export, and JSON import.
-- CSV batch generation for QR codes or barcodes, with preview and ZIP export.
+- CSV batch generation for QR codes or barcodes, with preview, ZIP export, and a sample file at `public/examples/batch-example.csv`.
 - PWA manifest and service worker for installability and offline cache of app assets.
 - Local settings persistence in `localStorage`.
 
@@ -94,6 +94,9 @@ src/
   pwa.ts
   storage.ts
   validation.ts
+public/
+  examples/
+    batch-example.csv
 tests/
   run-tests.ts
 scripts/

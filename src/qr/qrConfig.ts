@@ -120,7 +120,7 @@ export function buildQrOptions(settings: QRSettings, data: string, logo?: string
     type: "svg",
     data: data || " ",
     margin: merged.margin,
-    qrOptions: { errorCorrectionLevel: merged.errorCorrectionLevel },
+    qrOptions: { errorCorrectionLevel: merged.errorCorrectionLevel, mode: "Byte" },
     image: logo,
     imageOptions: {
       hideBackgroundDots: merged.hideBackgroundDots,

@@ -4,8 +4,11 @@ import JsBarcode from "jsbarcode";
 import type { BarcodeSettings, QRSettings } from "../shared/types";
 import { sanitizeFileName } from "../shared/fileNames";
 import { buildQrOptions } from "../qr/qrConfig";
+import { configureQrUtf8Encoding } from "../qr/qrEncoding";
 import { getJsBarcodeFormat } from "../barcode/barcodeConfig";
 import { validateBarcode } from "../barcode/barcodeValidation";
+
+configureQrUtf8Encoding();
 
 export type BatchCodeKind = "qr" | "barcode";
 export type BatchExportFormat = "png" | "svg";

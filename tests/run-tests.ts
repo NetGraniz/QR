@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import { calculateEan13CheckDigit, hasValidEan13CheckDigit } from "../src/barcode/checkDigits";
 import { validateBarcode, validateEan8, validateItf14, validateUpcA } from "../src/barcode/barcodeValidation";
 import { buildEmailPayload, buildSmsPayload, buildVCardPayload, buildWifiPayload } from "../src/qr/qrPayloads";
+import { buildQrOptions, DEFAULT_QR_SETTINGS } from "../src/qr/qrConfig";
+import { configureQrUtf8Encoding } from "../src/qr/qrEncoding";
 import { decodeQrBinaryData, getSafeOpenUrl } from "../src/scanner/scanner";
 import { isSafeUrl } from "../src/shared/security";
 import { sanitizeFileName } from "../src/shared/fileNames";
@@ -10,6 +12,13 @@ import { loadSettingsFromStorage } from "../src/storage";
 import { sanitizeTemplateImport } from "../src/templates/templateValidation";
 
 describe("QR payload generation", () => {
+  it("configures QR generation for UTF-8 byte data", async () => {
+    configureQrUtf8Encoding();
+    const qrcode = await import("qrcode-generator");
+    assert.deepEqual(qrcode.default.stringToBytes("привет"), Array.from(new TextEncoder().encode("привет")));
+    assert.equal(buildQrOptions(DEFAULT_QR_SETTINGS, "привет").qrOptions?.mode, "Byte");
+  });
+
   it("generates escaped Wi-Fi payload", () => {
     assert.equal(
       buildWifiPayload({ ssid: "Office;Net", password: "p:a,s\\s", security: "WPA", hidden: false, savePassword: false }),

@@ -33,7 +33,7 @@ export async function downloadBarcode(svg: SVGSVGElement, settings: BarcodeSetti
   const fileName = buildBarcodeFileName(settings, normalizedValue);
 
   if (settings.downloadFormat === "svg") {
-    downloadText(`${fileName}.svg`, serializeSvg(svg), "image/svg+xml;charset=utf-8");
+    downloadText(`${fileName}.svg`, serializeBarcodeSvg(svg), "image/svg+xml;charset=utf-8");
     return;
   }
 
@@ -41,7 +41,7 @@ export async function downloadBarcode(svg: SVGSVGElement, settings: BarcodeSetti
   downloadBlob(`${fileName}.${settings.downloadFormat}`, blob);
 }
 
-function serializeSvg(svg: SVGSVGElement): string {
+export function serializeBarcodeSvg(svg: SVGSVGElement): string {
   const clone = svg.cloneNode(true) as SVGSVGElement;
   clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   return new XMLSerializer().serializeToString(clone);
@@ -53,7 +53,7 @@ function getSvgSize(svg: SVGSVGElement): { width: number; height: number } {
   return { width, height };
 }
 
-async function rasterizeBarcode(
+export async function rasterizeBarcode(
   svg: SVGSVGElement,
   format: Exclude<ExportFormat, "svg">,
   scale: 1 | 2 | 4,
@@ -75,7 +75,7 @@ async function rasterizeBarcode(
     context.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  const image = await loadSvgImage(serializeSvg(svg));
+  const image = await loadSvgImage(serializeBarcodeSvg(svg));
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
   return new Promise((resolve, reject) => {
@@ -107,11 +107,11 @@ function loadSvgImage(svg: string): Promise<HTMLImageElement> {
   });
 }
 
-function downloadText(fileName: string, text: string, type: string): void {
+export function downloadText(fileName: string, text: string, type: string): void {
   downloadBlob(fileName, new Blob([text], { type }));
 }
 
-function downloadBlob(fileName: string, blob: Blob): void {
+export function downloadBlob(fileName: string, blob: Blob): void {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

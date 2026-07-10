@@ -1,5 +1,5 @@
-const CACHE_NAME = "qr-code-studio-v4";
-const CORE_ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./pwa-icon.svg", "./favicon.svg"];
+const CACHE_NAME = "qr-code-studio-v5";
+const CORE_ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./pwa-icon.svg", "./favicon.svg", "./examples/batch-example.csv"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

@@ -1,6 +1,7 @@
 import QRCodeStyling from "qr-code-styling";
 import Papa from "papaparse";
 import "./styles.css";
+import { configureQrUtf8Encoding } from "./qr/qrEncoding";
 import {
   BARCODE_DOWNLOAD_FORMATS,
   BARCODE_FORMAT_LABELS,
@@ -9,7 +10,7 @@ import {
   TEXT_ALIGN_LABELS,
   BARCODE_TEXT_ALIGNMENTS,
 } from "./barcode/barcodeConfig";
-import { downloadBarcode, renderBarcode } from "./barcode/barcodeGenerator";
+import { downloadBarcode, rasterizeBarcode, renderBarcode, serializeBarcodeSvg } from "./barcode/barcodeGenerator";
 import { validateBarcode } from "./barcode/barcodeValidation";
 import {
   CORNER_DOT_LABELS,
@@ -78,6 +79,8 @@ let scannerCameraTimer: number | null = null;
 let qrVerificationToken = 0;
 
 const app = getRequiredElement<HTMLDivElement>("#app");
+
+configureQrUtf8Encoding();
 
 app.innerHTML = `
   <main class="page-shell">
@@ -279,7 +282,12 @@ function renderQrForm(): void {
         ${rangeField("jpegQuality", "Качество JPEG", qr.jpegQuality, 0.6, 1, 0.01, `${Math.round(qr.jpegQuality * 100)}%`)}
       </div>
       ${textField("fileName", "Имя файла", qr.fileName)}
-      <button class="primary-button" id="downloadButton" type="button">Скачать QR-код</button>
+      <div class="download-row">
+        <button class="primary-button" id="downloadButton" type="button">Скачать QR-код</button>
+        <button class="ghost-button" id="copyQrPngButton" type="button">Копировать PNG</button>
+        <button class="ghost-button" id="copyQrSvgButton" type="button">Копировать SVG</button>
+        <button class="ghost-button" id="printQrButton" type="button">Печать</button>
+      </div>
     </details>
 
     <details class="settings-section">
@@ -363,7 +371,12 @@ function renderBarcodeForm(): void {
         ${barcodeRangeField("jpegQuality", "Качество JPEG", barcode.jpegQuality, 0.6, 1, 0.01, `${Math.round(barcode.jpegQuality * 100)}%`)}
       </div>
       ${barcodeTextField("fileName", "Имя файла", barcode.fileName, defaultBarcodeFileName(barcode))}
-      <button class="primary-button" id="downloadBarcodeButton" type="button">Скачать штрихкод</button>
+      <div class="download-row">
+        <button class="primary-button" id="downloadBarcodeButton" type="button">Скачать штрихкод</button>
+        <button class="ghost-button" id="copyBarcodePngButton" type="button">Копировать PNG</button>
+        <button class="ghost-button" id="copyBarcodeSvgButton" type="button">Копировать SVG</button>
+        <button class="ghost-button" id="printBarcodeButton" type="button">Печать</button>
+      </div>
     </details>
 
     <details class="settings-section">
@@ -417,7 +430,10 @@ function renderBatchForm(): void {
       <div class="scanner-dropzone" id="batchDropzone">
         <p><strong>Загрузите CSV до 500 строк</strong></p>
         <p>${batchFileName ? `Выбран файл: ${escapeHtml(batchFileName)}` : "Перетащите CSV сюда или выберите файл."}</p>
-        <label class="file-button" for="batchCsvInput">Выбрать CSV</label>
+        <div class="download-row">
+          <label class="file-button" for="batchCsvInput">Выбрать CSV</label>
+          <a class="ghost-button" href="./examples/batch-example.csv" download="batch-example.csv">Скачать пример CSV</a>
+        </div>
         <input id="batchCsvInput" class="hidden-file" type="file" accept=".csv,text/csv" />
       </div>
     </details>
@@ -689,6 +705,22 @@ function bindEvents(): void {
 
     if (target.closest("#downloadButton")) {
       await downloadQr();
+      return;
+    }
+
+    if (target.closest("#copyQrPngButton")) {
+      await copyQrPng();
+      return;
+    }
+
+    if (target.closest("#copyQrSvgButton")) {
+      await copyQrSvg();
+      return;
+    }
+
+    if (target.closest("#printQrButton")) {
+      await printQr();
+      return;
     }
 
     if (target.closest("#saveHistoryButton")) {
@@ -719,6 +751,22 @@ function bindEvents(): void {
 
     if (target.closest("#downloadBarcodeButton")) {
       await downloadCurrentBarcode();
+      return;
+    }
+
+    if (target.closest("#copyBarcodePngButton")) {
+      await copyBarcodePng();
+      return;
+    }
+
+    if (target.closest("#copyBarcodeSvgButton")) {
+      await copyBarcodeSvg();
+      return;
+    }
+
+    if (target.closest("#printBarcodeButton")) {
+      await printBarcode();
+      return;
     }
 
     const templateAction = handleTemplateAction(target);
@@ -1157,6 +1205,80 @@ async function downloadQr(): Promise<void> {
   }
 }
 
+async function getQrExportBlob(format: ExportFormat): Promise<Blob> {
+  const validation = validateQrPayload(state.qr.contentType, state.qr.payloads);
+  if (validation.errors.length) {
+    throw new Error(validation.errors[0]);
+  }
+
+  const scale = format === "png" ? state.qr.exportScale : 1;
+  const override = {
+    downloadFormat: format,
+    ...(scale > 1 ? { width: state.qr.width * scale, height: state.qr.height * scale } : {}),
+    ...(format === "jpeg" && state.qr.transparentBackground ? { transparentBackground: false, backgroundColor: "#ffffff" } : {}),
+  };
+  const exporter = new QRCodeStyling(buildQrOptions(state.qr, currentPayload(), logoDataUrl, override));
+  const raw = await exporter.getRawData(format);
+
+  if (!raw) {
+    throw new Error("Не удалось подготовить QR-код.");
+  }
+
+  if (raw instanceof Blob) {
+    return raw;
+  }
+
+  if (typeof raw === "string") {
+    return new Blob([raw], { type: format === "svg" ? "image/svg+xml;charset=utf-8" : `image/${format}` });
+  }
+
+  const bytes = raw instanceof ArrayBuffer ? new Uint8Array(raw) : new Uint8Array(raw as unknown as Uint8Array);
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return new Blob([copy], { type: format === "svg" ? "image/svg+xml;charset=utf-8" : `image/${format}` });
+}
+
+async function copyBlobToClipboard(blob: Blob, type: string): Promise<void> {
+  if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
+    throw new Error("Буфер обмена для изображений недоступен в этом браузере.");
+  }
+
+  await navigator.clipboard.write([new ClipboardItem({ [type]: blob })]);
+}
+
+async function copyQrPng(): Promise<void> {
+  try {
+    const blob = await getQrExportBlob("png");
+    await copyBlobToClipboard(blob, "image/png");
+    setStatus("PNG QR-кода скопирован в буфер обмена.");
+  } catch (error) {
+    console.error(error);
+    setStatus(error instanceof Error ? error.message : "Не удалось скопировать PNG.", true);
+  }
+}
+
+async function copyQrSvg(): Promise<void> {
+  try {
+    const blob = await getQrExportBlob("svg");
+    await navigator.clipboard?.writeText(await blob.text());
+    setStatus("SVG-код QR-кода скопирован.");
+  } catch (error) {
+    console.error(error);
+    setStatus(error instanceof Error ? error.message : "Не удалось скопировать SVG.", true);
+  }
+}
+
+async function printQr(): Promise<void> {
+  try {
+    const blob = await getQrExportBlob("png");
+    await printBlobImage(blob, "QR Code Studio");
+    setStatus("Окно печати открыто.");
+  } catch (error) {
+    console.error(error);
+    setStatus(error instanceof Error ? error.message : "Не удалось подготовить печать.", true);
+  }
+}
+
 async function downloadCurrentBarcode(): Promise<void> {
   const validation = validateBarcode(state.barcode.format, state.barcode.value);
   if (!validation.valid) {
@@ -1180,6 +1302,97 @@ async function downloadCurrentBarcode(): Promise<void> {
     console.error(error);
     setStatus("Не удалось скачать штрихкод.", true);
   }
+}
+
+function requireBarcodeSvg(): { svg: SVGSVGElement; value: string } {
+  const validation = validateBarcode(state.barcode.format, state.barcode.value);
+  if (!validation.valid) {
+    throw new Error(validation.error ?? "Проверьте значение штрихкода.");
+  }
+
+  if (!barcodeSvg) {
+    renderBarcodePreview();
+  }
+
+  if (!barcodeSvg) {
+    throw new Error("Не удалось подготовить штрихкод.");
+  }
+
+  return { svg: barcodeSvg, value: validation.value };
+}
+
+async function copyBarcodePng(): Promise<void> {
+  try {
+    const { svg } = requireBarcodeSvg();
+    const blob = await rasterizeBarcode(svg, "png", state.barcode.exportScale, state.barcode.jpegQuality, state.barcode.transparentBackground, state.barcode.backgroundColor);
+    await copyBlobToClipboard(blob, "image/png");
+    setStatus("PNG штрихкода скопирован в буфер обмена.");
+  } catch (error) {
+    console.error(error);
+    setStatus(error instanceof Error ? error.message : "Не удалось скопировать PNG.", true);
+  }
+}
+
+async function copyBarcodeSvg(): Promise<void> {
+  try {
+    const { svg } = requireBarcodeSvg();
+    await navigator.clipboard?.writeText(serializeBarcodeSvg(svg));
+    setStatus("SVG-код штрихкода скопирован.");
+  } catch (error) {
+    console.error(error);
+    setStatus(error instanceof Error ? error.message : "Не удалось скопировать SVG.", true);
+  }
+}
+
+async function printBarcode(): Promise<void> {
+  try {
+    const { svg } = requireBarcodeSvg();
+    const blob = await rasterizeBarcode(svg, "png", state.barcode.exportScale, state.barcode.jpegQuality, state.barcode.transparentBackground, state.barcode.backgroundColor);
+    await printBlobImage(blob, "QR Code Studio barcode");
+    setStatus("Окно печати открыто.");
+  } catch (error) {
+    console.error(error);
+    setStatus(error instanceof Error ? error.message : "Не удалось подготовить печать.", true);
+  }
+}
+
+function printBlobImage(blob: Blob, title: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const printWindow = window.open("", "_blank", "noopener,noreferrer");
+    if (!printWindow) {
+      URL.revokeObjectURL(url);
+      reject(new Error("Браузер заблокировал окно печати."));
+      return;
+    }
+
+    printWindow.document.write(`
+      <!doctype html>
+      <html lang="ru">
+        <head>
+          <meta charset="utf-8" />
+          <title>${escapeHtml(title)}</title>
+          <style>
+            body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #fff; }
+            img { max-width: 92vw; max-height: 92vh; }
+          </style>
+        </head>
+        <body>
+          <img src="${url}" alt="${escapeHtml(title)}" />
+          <script>
+            window.addEventListener("load", () => {
+              window.focus();
+              window.print();
+            });
+            window.addEventListener("afterprint", () => window.close());
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+    resolve();
+  });
 }
 
 function defaultBarcodeFileName(settings: BarcodeSettings): string {

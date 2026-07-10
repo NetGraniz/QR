@@ -1,0 +1,6 @@
+value,file_name,kind,note
+https://example.com,example-home,qr,URL QR example
+https://github.com/NetGraniz/QR,qr-code-studio,qr,Project page
+WIFI:T:WPA;S:Office WiFi;P:sample-password;H:false;;,office-wifi,qr,Wi-Fi QR payload example
+1234567890128,ean-13-demo,barcode,EAN-13 with valid check digit
+CODE128-DEMO-001,code128-demo,barcode,Code 128 value
