@@ -381,7 +381,8 @@ legend {
 }
 
 #logoInput,
-#scannerImageInput {
+#scannerImageInput,
+.hidden-file {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -445,6 +446,51 @@ legend {
 .scan-result-card p {
   margin-bottom: 0;
   color: #334155;
+}
+
+.template-list,
+.history-list,
+.batch-preview {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-item {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.compact-item span {
+  color: #64748b;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.batch-table {
+  width: 100%;
+  border-collapse: collapse;
+  overflow: hidden;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 0.9rem;
+}
+
+.batch-table th,
+.batch-table td {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.batch-table th {
+  color: #334155;
+  font-weight: 900;
 }
 
 .toggle-field {

@@ -1,4 +1,5 @@
 import QRCodeStyling from "qr-code-styling";
+import Papa from "papaparse";
 import "./styles.css";
 import {
   BARCODE_DOWNLOAD_FORMATS,
@@ -26,9 +27,13 @@ import {
 import { buildQrPayload } from "./qr/qrPayloads";
 import { buildReadabilityResult, validateQrPayload } from "./qr/qrValidation";
 import { getSafeOpenUrl, scanImageFile, scanVideoFrame, verifyQrPreview } from "./scanner/scanner";
+import { clearHistoryEntries, deleteHistoryEntry, listHistoryEntries, renameHistoryEntry, saveHistoryEntry } from "./history/historyStorage";
+import { buildBatchZip, type BatchCodeKind, type BatchExportFormat, type BatchRecord } from "./export/zipExport";
+import { deleteTemplate, exportTemplate, importTemplate, listTemplates, renameTemplate, saveTemplate } from "./templates/templateStorage";
+import { registerServiceWorker } from "./pwa";
 import { sanitizeSvg } from "./shared/security";
 import { sanitizeFileName } from "./shared/fileNames";
-import type { AppMode, BarcodeSettings, ExportFormat, PersistedAppState, QRContentType, QRSettings, ScanOutcome, ScanResult } from "./shared/types";
+import type { AppMode, BarcodeSettings, ExportFormat, HistoryEntry, PersistedAppState, QRContentType, QRSettings, ScanOutcome, ScanResult, StyleTemplate } from "./shared/types";
 import { loadSettings, saveSettings } from "./storage";
 import { clampNumber, validateLogoFile } from "./validation";
 
@@ -48,9 +53,19 @@ const MODE_LABELS: Record<AppMode, string> = {
   qr: "Создать QR-код",
   barcode: "Создать штрихкод",
   scanner: "Сканировать код",
+  batch: "Пакетная генерация",
 };
 
 let state: PersistedAppState = loadSettings();
+let historyEntries: HistoryEntry[] = [];
+let styleTemplates: StyleTemplate[] = [];
+let batchRecords: BatchRecord[] = [];
+let batchColumns: string[] = [];
+let batchFileName = "";
+let batchKind: BatchCodeKind = "qr";
+let batchFormat: BatchExportFormat = "svg";
+let batchValueColumn = "";
+let batchFileNameColumn = "";
 let logoDataUrl = "";
 let logoFileName = "";
 let qrCode: QRCodeStyling | null = null;
@@ -115,8 +130,10 @@ const statusMessage = getRequiredElement<HTMLParagraphElement>("#statusMessage")
 const qrSizeLabel = getRequiredElement<HTMLSpanElement>("#qrSizeLabel");
 const resetButton = getRequiredElement<HTMLButtonElement>("#resetButton");
 
+registerServiceWorker();
 render();
 bindEvents();
+void refreshLocalCollections();
 
 function getRequiredElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -143,8 +160,10 @@ function render(): void {
     renderQrForm();
   } else if (state.mode === "barcode") {
     renderBarcodeForm();
-  } else {
+  } else if (state.mode === "scanner") {
     renderScannerForm();
+  } else if (state.mode === "batch") {
+    renderBatchForm();
   }
 
   renderPreview();
@@ -262,6 +281,25 @@ function renderQrForm(): void {
       ${textField("fileName", "Имя файла", qr.fileName)}
       <button class="primary-button" id="downloadButton" type="button">Скачать QR-код</button>
     </details>
+
+    <details class="settings-section">
+      <summary>Шаблоны оформления</summary>
+      <div class="download-row">
+        <button class="primary-button" id="saveTemplateButton" type="button">Сохранить шаблон</button>
+        <label class="file-button" for="templateImportInput">Импорт JSON</label>
+        <input id="templateImportInput" class="hidden-file" type="file" accept="application/json,.json" />
+      </div>
+      <div class="template-list">${renderTemplates()}</div>
+    </details>
+
+    <details class="settings-section">
+      <summary>История</summary>
+      <div class="download-row">
+        <button class="ghost-button" id="saveHistoryButton" type="button">Сохранить в историю</button>
+        <button class="ghost-button" id="clearHistoryButton" type="button">Очистить историю</button>
+      </div>
+      <div class="history-list">${renderHistory()}</div>
+    </details>
   `;
 
   const payloadOutput = getRequiredElement<HTMLTextAreaElement>("#payloadOutput");
@@ -327,6 +365,15 @@ function renderBarcodeForm(): void {
       ${barcodeTextField("fileName", "Имя файла", barcode.fileName, defaultBarcodeFileName(barcode))}
       <button class="primary-button" id="downloadBarcodeButton" type="button">Скачать штрихкод</button>
     </details>
+
+    <details class="settings-section">
+      <summary>История</summary>
+      <div class="download-row">
+        <button class="ghost-button" id="saveHistoryButton" type="button">Сохранить в историю</button>
+        <button class="ghost-button" id="clearHistoryButton" type="button">Очистить историю</button>
+      </div>
+      <div class="history-list">${renderHistory()}</div>
+    </details>
   `;
 }
 
@@ -358,6 +405,54 @@ function renderScannerForm(): void {
       <summary>Результат</summary>
       <div class="scanner-result" id="scannerResult">${renderScannerResults()}</div>
     </details>
+  `;
+}
+
+function renderBatchForm(): void {
+  const valueColumn = batchValueColumn || batchColumns[0] || "";
+  const fileColumn = batchFileNameColumn || batchColumns[1] || valueColumn;
+  modeForm.innerHTML = `
+    <details class="settings-section" open>
+      <summary>CSV-файл</summary>
+      <div class="scanner-dropzone" id="batchDropzone">
+        <p><strong>Загрузите CSV до 500 строк</strong></p>
+        <p>${batchFileName ? `Выбран файл: ${escapeHtml(batchFileName)}` : "Перетащите CSV сюда или выберите файл."}</p>
+        <label class="file-button" for="batchCsvInput">Выбрать CSV</label>
+        <input id="batchCsvInput" class="hidden-file" type="file" accept=".csv,text/csv" />
+      </div>
+    </details>
+
+    <details class="settings-section" open>
+      <summary>Настройки генерации</summary>
+      <div class="control-grid">
+        ${batchSelectField("kind", "Тип кода", batchKind, [["qr", "QR-коды"], ["barcode", "Штрихкоды"]])}
+        ${batchSelectField("format", "Формат файлов", batchFormat, [["svg", "SVG"], ["png", "PNG"]])}
+        ${batchSelectField("valueColumn", "Столбец значения", valueColumn, batchColumns.map((column) => [column, column]))}
+        ${batchSelectField("fileNameColumn", "Столбец имени файла", fileColumn, batchColumns.map((column) => [column, column]))}
+      </div>
+      <button class="primary-button" id="generateBatchButton" type="button" ${batchRecords.length === 0 ? "disabled" : ""}>Создать ZIP</button>
+    </details>
+
+    <details class="settings-section" open>
+      <summary>Предпросмотр первых строк</summary>
+      <div class="batch-preview">${renderBatchPreview()}</div>
+    </details>
+  `;
+}
+
+function renderBatchPreview(): string {
+  if (batchRecords.length === 0) {
+    return `<p class="helper-text">После загрузки CSV здесь появятся первые пять записей.</p>`;
+  }
+
+  return `
+    <table class="batch-table">
+      <thead><tr>${batchColumns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr></thead>
+      <tbody>
+        ${batchRecords.slice(0, 5).map((record) => `<tr>${batchColumns.map((column) => `<td>${escapeHtml(record[column] ?? "")}</td>`).join("")}</tr>`).join("")}
+      </tbody>
+    </table>
+    <p class="helper-text">Найдено записей: ${Math.min(batchRecords.length, 500)}${batchRecords.length > 500 ? " из CSV будет использовано только 500." : "."}</p>
   `;
 }
 
@@ -497,6 +592,63 @@ function barcodeSelectField(setting: string, label: string, selected: string, op
   `;
 }
 
+function batchSelectField(setting: string, label: string, selected: string, options: Array<[string, string]>): string {
+  return `
+    <label class="field">
+      <span>${label}</span>
+      <select data-batch-setting="${setting}" ${options.length === 0 ? "disabled" : ""}>
+        ${options.map(([value, optionLabel]) => `<option value="${escapeHtml(value)}" ${value === selected ? "selected" : ""}>${escapeHtml(optionLabel)}</option>`).join("")}
+      </select>
+    </label>
+  `;
+}
+
+function renderTemplates(): string {
+  if (styleTemplates.length === 0) {
+    return `<p class="helper-text">Сохранённых шаблонов пока нет.</p>`;
+  }
+
+  return styleTemplates
+    .map(
+      (template) => `
+        <article class="compact-item">
+          <strong>${escapeHtml(template.name)}</strong>
+          <div class="download-row">
+            <button class="ghost-button" type="button" data-apply-template="${template.id}">Применить</button>
+            <button class="ghost-button" type="button" data-export-template="${template.id}">Экспорт</button>
+            <button class="ghost-button" type="button" data-rename-template="${template.id}">Переименовать</button>
+            <button class="ghost-button" type="button" data-delete-template="${template.id}">Удалить</button>
+          </div>
+        </article>
+      `,
+    )
+    .join("");
+}
+
+function renderHistory(): string {
+  if (historyEntries.length === 0) {
+    return `<p class="helper-text">История пока пустая.</p>`;
+  }
+
+  return historyEntries
+    .slice(0, 12)
+    .map(
+      (entry) => `
+        <article class="compact-item">
+          <strong>${escapeHtml(entry.title)}</strong>
+          <span>${entry.kind === "qr" ? "QR" : "Штрихкод"} · ${escapeHtml(entry.subtype)} · ${new Date(entry.createdAt).toLocaleString("ru-RU")}</span>
+          <div class="download-row">
+            <button class="ghost-button" type="button" data-open-history="${entry.id}">Открыть</button>
+            <button class="ghost-button" type="button" data-duplicate-history="${entry.id}">Дублировать</button>
+            <button class="ghost-button" type="button" data-rename-history="${entry.id}">Переименовать</button>
+            <button class="ghost-button" type="button" data-delete-history="${entry.id}">Удалить</button>
+          </div>
+        </article>
+      `,
+    )
+    .join("");
+}
+
 function bindEvents(): void {
   modeTabs.addEventListener("click", (event) => {
     const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-mode]");
@@ -539,6 +691,25 @@ function bindEvents(): void {
       await downloadQr();
     }
 
+    if (target.closest("#saveHistoryButton")) {
+      await saveCurrentHistoryEntry();
+      return;
+    }
+
+    if (target.closest("#clearHistoryButton")) {
+      await clearHistoryEntries();
+      await refreshLocalCollections();
+      setStatus("История очищена.");
+      return;
+    }
+
+    if (target.closest("#saveTemplateButton")) {
+      saveCurrentTemplate();
+      await refreshLocalCollections();
+      setStatus("Шаблон сохранён.");
+      return;
+    }
+
     if (target.closest("#clearBarcodeButton")) {
       state.barcode.value = "";
       render();
@@ -549,6 +720,12 @@ function bindEvents(): void {
     if (target.closest("#downloadBarcodeButton")) {
       await downloadCurrentBarcode();
     }
+
+    const templateAction = handleTemplateAction(target);
+    if (templateAction) return;
+
+    const historyAction = await handleHistoryAction(target);
+    if (historyAction) return;
 
     const copyScanButton = target.closest<HTMLButtonElement>("[data-copy-scan]");
     if (copyScanButton) {
@@ -597,6 +774,10 @@ function bindEvents(): void {
       setStatus("Камера остановлена.");
       render();
     }
+
+    if (target.closest("#generateBatchButton")) {
+      await generateBatchZip();
+    }
   });
 
   settingsForm.addEventListener("change", async (event) => {
@@ -607,19 +788,23 @@ function bindEvents(): void {
     if (input.id === "scannerImageInput" && input.files?.[0]) {
       await handleScannerFile(input.files[0]);
     }
+    if (input.id === "templateImportInput" && input.files?.[0]) {
+      await importTemplateFile(input.files[0]);
+    }
+    if (input.id === "batchCsvInput" && input.files?.[0]) {
+      await handleBatchCsv(input.files[0]);
+    }
   });
 
   settingsForm.addEventListener("dragover", (event) => {
-    if ((event.target as HTMLElement).closest("#scannerDropzone")) {
+    if ((event.target as HTMLElement).closest("#scannerDropzone, #batchDropzone")) {
       event.preventDefault();
-      getRequiredElement<HTMLDivElement>("#scannerDropzone").classList.add("is-dragging");
+      ((event.target as HTMLElement).closest("#scannerDropzone, #batchDropzone") as HTMLElement).classList.add("is-dragging");
     }
   });
 
   settingsForm.addEventListener("dragleave", (event) => {
-    if ((event.target as HTMLElement).closest("#scannerDropzone")) {
-      getRequiredElement<HTMLDivElement>("#scannerDropzone").classList.remove("is-dragging");
-    }
+    ((event.target as HTMLElement).closest("#scannerDropzone, #batchDropzone") as HTMLElement | null)?.classList.remove("is-dragging");
   });
 
   settingsForm.addEventListener("drop", async (event) => {
@@ -629,6 +814,16 @@ function bindEvents(): void {
     const file = event.dataTransfer?.files?.[0];
     if (file) {
       await handleScannerFile(file);
+    }
+  });
+
+  settingsForm.addEventListener("drop", async (event) => {
+    if (!(event.target as HTMLElement).closest("#batchDropzone")) return;
+    event.preventDefault();
+    ((event.target as HTMLElement).closest("#batchDropzone") as HTMLElement).classList.remove("is-dragging");
+    const file = event.dataTransfer?.files?.[0];
+    if (file) {
+      await handleBatchCsv(file);
     }
   });
 
@@ -664,6 +859,13 @@ function bindEvents(): void {
 
 function handleSettingChange(event: Event): void {
   const element = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+  const batchSetting = element.dataset.batchSetting;
+  if (batchSetting) {
+    setBatchSetting(batchSetting, element.value);
+    render();
+    return;
+  }
+
   const focusSnapshot = captureInputFocus(element);
   const barcodeSetting = element.dataset.barcodeSetting;
   if (barcodeSetting) {
@@ -681,6 +883,13 @@ function handleSettingChange(event: Event): void {
   setNestedSetting(setting, value);
   render();
   restoreInputFocus(focusSnapshot);
+}
+
+function setBatchSetting(setting: string, value: string): void {
+  if (setting === "kind") batchKind = value as BatchCodeKind;
+  else if (setting === "format") batchFormat = value as BatchExportFormat;
+  else if (setting === "valueColumn") batchValueColumn = value;
+  else if (setting === "fileNameColumn") batchFileNameColumn = value;
 }
 
 type InputFocusSnapshot = {
@@ -796,6 +1005,18 @@ function renderPreview(): void {
 
   if (state.mode === "barcode") {
     renderBarcodePreview();
+    return;
+  }
+
+  if (state.mode === "batch") {
+    qrCode = null;
+    barcodeSvg = null;
+    qrSizeLabel.textContent = "CSV → ZIP";
+    qrStage.classList.remove("is-transparent");
+    warningBox.hidden = true;
+    warningBox.innerHTML = "";
+    qrPreview.innerHTML = `<div class="scanner-preview-empty">Загрузите CSV, выберите столбцы и получите ZIP с кодами.</div>`;
+    setStatus(batchRecords.length ? `Готово записей для пакета: ${Math.min(batchRecords.length, 500)}.` : "Загрузите CSV для пакетной генерации.");
     return;
   }
 
@@ -1125,6 +1346,206 @@ function queueQrVerification(expectedPayload: string): void {
       }
     }
   }, 250);
+}
+
+async function refreshLocalCollections(): Promise<void> {
+  try {
+    historyEntries = await listHistoryEntries();
+  } catch {
+    historyEntries = [];
+  }
+  styleTemplates = listTemplates();
+  render();
+}
+
+async function saveCurrentHistoryEntry(): Promise<void> {
+  const kind = state.mode === "barcode" ? "barcode" : "qr";
+  const entry: HistoryEntry = {
+    id: crypto.randomUUID(),
+    kind,
+    subtype: kind === "qr" ? state.qr.contentType : state.barcode.format,
+    value: kind === "qr" ? historySafeQrPayload() : state.barcode.value,
+    title: kind === "qr" ? defaultQrHistoryTitle() : defaultBarcodeFileName(state.barcode),
+    createdAt: new Date().toISOString(),
+    settings: structuredClone(kind === "qr" ? state.qr : state.barcode),
+    thumbnail: currentPreviewThumbnail(),
+  };
+  await saveHistoryEntry(entry);
+  await refreshLocalCollections();
+  setStatus("Код сохранён в историю.");
+}
+
+function historySafeQrPayload(): string {
+  if (state.qr.contentType !== "wifi" || state.qr.payloads.wifi.savePassword) {
+    return currentPayload();
+  }
+  const payloads = structuredClone(state.qr.payloads);
+  payloads.wifi.password = "";
+  return buildQrPayload(state.qr.contentType, payloads);
+}
+
+function defaultQrHistoryTitle(): string {
+  return sanitizeFileName(state.qr.fileName || `qr-${state.qr.contentType}`, `qr-${state.qr.contentType}`);
+}
+
+function currentPreviewThumbnail(): string {
+  const svg = qrPreview.querySelector("svg");
+  if (svg) {
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(svg))}`;
+  }
+  const canvas = qrPreview.querySelector("canvas");
+  return canvas ? canvas.toDataURL("image/png") : "";
+}
+
+function saveCurrentTemplate(): void {
+  const name = window.prompt("Название шаблона", "Мой стиль");
+  if (!name) return;
+  const { payloads, contentType, width, height, fileName, ...styleSettings } = structuredClone(state.qr);
+  void payloads;
+  void contentType;
+  void width;
+  void height;
+  void fileName;
+  saveTemplate({
+    id: crypto.randomUUID(),
+    name,
+    createdAt: new Date().toISOString(),
+    settings: styleSettings,
+  });
+}
+
+function handleTemplateAction(target: HTMLElement): boolean {
+  const applyButton = target.closest<HTMLButtonElement>("[data-apply-template]");
+  const exportButton = target.closest<HTMLButtonElement>("[data-export-template]");
+  const renameButton = target.closest<HTMLButtonElement>("[data-rename-template]");
+  const deleteButton = target.closest<HTMLButtonElement>("[data-delete-template]");
+  const templateId = applyButton?.dataset.applyTemplate ?? exportButton?.dataset.exportTemplate ?? renameButton?.dataset.renameTemplate ?? deleteButton?.dataset.deleteTemplate;
+  if (!templateId) return false;
+
+  const template = styleTemplates.find((item) => item.id === templateId);
+  if (!template) return true;
+
+  if (applyButton) {
+    state.qr = { ...state.qr, ...template.settings };
+    render();
+    setStatus("Шаблон применён.");
+  } else if (exportButton) {
+    downloadBlob(`${sanitizeFileName(template.name, "template")}.json`, exportTemplate(template));
+  } else if (renameButton) {
+    const name = window.prompt("Новое название шаблона", template.name);
+    if (name) {
+      renameTemplate(template.id, name);
+      void refreshLocalCollections();
+    }
+  } else if (deleteButton) {
+    deleteTemplate(template.id);
+    void refreshLocalCollections();
+  }
+
+  return true;
+}
+
+async function importTemplateFile(file: File): Promise<void> {
+  try {
+    importTemplate(await file.text());
+    await refreshLocalCollections();
+    setStatus("Шаблон импортирован.");
+  } catch {
+    setStatus("Не удалось импортировать шаблон.", true);
+  }
+}
+
+async function handleHistoryAction(target: HTMLElement): Promise<boolean> {
+  const openButton = target.closest<HTMLButtonElement>("[data-open-history]");
+  const duplicateButton = target.closest<HTMLButtonElement>("[data-duplicate-history]");
+  const renameButton = target.closest<HTMLButtonElement>("[data-rename-history]");
+  const deleteButton = target.closest<HTMLButtonElement>("[data-delete-history]");
+  const id = openButton?.dataset.openHistory ?? duplicateButton?.dataset.duplicateHistory ?? renameButton?.dataset.renameHistory ?? deleteButton?.dataset.deleteHistory;
+  if (!id) return false;
+
+  const entry = historyEntries.find((item) => item.id === id);
+  if (!entry) return true;
+
+  if (openButton || duplicateButton) {
+    applyHistoryEntry(entry, Boolean(duplicateButton));
+  } else if (renameButton) {
+    const title = window.prompt("Новое название", entry.title);
+    if (title) await renameHistoryEntry(entry.id, title);
+    await refreshLocalCollections();
+  } else if (deleteButton) {
+    await deleteHistoryEntry(entry.id);
+    await refreshLocalCollections();
+  }
+
+  return true;
+}
+
+function applyHistoryEntry(entry: HistoryEntry, duplicate: boolean): void {
+  if (entry.kind === "qr") {
+    state.mode = "qr";
+    state.qr = structuredClone(entry.settings as QRSettings);
+    if (duplicate) state.qr.fileName = `${entry.title}-copy`;
+  } else {
+    state.mode = "barcode";
+    state.barcode = structuredClone(entry.settings as BarcodeSettings);
+    if (duplicate) state.barcode.fileName = `${entry.title}-copy`;
+  }
+  render();
+  setStatus(duplicate ? "Запись истории продублирована." : "Запись истории открыта.");
+}
+
+async function handleBatchCsv(file: File): Promise<void> {
+  try {
+    const text = await file.text();
+    const parsed = Papa.parse<BatchRecord>(text, { header: true, skipEmptyLines: true });
+    if (parsed.errors.length || !parsed.data.length) {
+      throw new Error("CSV не содержит данных.");
+    }
+    batchRecords = parsed.data;
+    batchColumns = parsed.meta.fields ?? Object.keys(parsed.data[0] ?? {});
+    batchValueColumn = batchColumns[0] ?? "";
+    batchFileNameColumn = batchColumns[1] ?? batchValueColumn;
+    batchFileName = file.name;
+    render();
+    setStatus("CSV загружен.");
+  } catch {
+    setStatus("Не удалось прочитать CSV.", true);
+  }
+}
+
+async function generateBatchZip(): Promise<void> {
+  if (!batchRecords.length || !batchValueColumn) {
+    setStatus("Загрузите CSV и выберите столбец со значением.", true);
+    return;
+  }
+
+  try {
+    setStatus("Создаю ZIP...");
+    const zip = await buildBatchZip({
+      records: batchRecords,
+      valueColumn: batchValueColumn,
+      fileNameColumn: batchFileNameColumn || batchValueColumn,
+      kind: batchKind,
+      format: batchFormat,
+      qrSettings: state.qr,
+      barcodeSettings: state.barcode,
+      onProgress: (done, total) => setStatus(`Пакетная генерация: ${done} из ${total}`),
+    });
+    downloadBlob(`qr-code-studio-batch-${Date.now()}.zip`, zip);
+    setStatus("ZIP готов.");
+  } catch (error) {
+    console.error(error);
+    setStatus("Не удалось создать ZIP. Проверьте CSV и формат кодов.", true);
+  }
+}
+
+function downloadBlob(fileName: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function setStatus(message: string, isError = false): void {

@@ -68,7 +68,7 @@ export function loadSettings(): PersistedAppState {
     }
 
     const parsed = JSON.parse(raw) as Partial<PersistedAppState>;
-    const mode: AppMode = parsed.mode === "barcode" || parsed.mode === "scanner" ? parsed.mode : "qr";
+    const mode: AppMode = parsed.mode === "barcode" || parsed.mode === "scanner" || parsed.mode === "batch" ? parsed.mode : "qr";
     return { mode, qr: mergeQrSettings(parsed.qr), barcode: mergeBarcodeSettings(parsed.barcode) };
   } catch {
     return { mode: "qr", qr: structuredClone(DEFAULT_QR_SETTINGS), barcode: structuredClone(DEFAULT_BARCODE_SETTINGS) };

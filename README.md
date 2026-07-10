@@ -24,14 +24,16 @@ QR Code Studio is a lightweight static web app for generating QR codes and linea
 - Browser `BarcodeDetector` support for QR codes and supported linear barcodes, with `jsQR` fallback for QR images.
 - Automatic QR preview verification directly in the browser.
 - Safe scan actions: copy result, open only safe links, or create a new code from the scanned value.
+- Local IndexedDB history with open, duplicate, rename, delete, and clear actions.
+- User style templates with save, apply, rename, delete, JSON export, and JSON import.
+- CSV batch generation for QR codes or barcodes, with preview and ZIP export.
+- PWA manifest and service worker for installability and offline cache of app assets.
 - Local settings persistence in `localStorage`.
 
 ## Planned Next Stages
 
-- IndexedDB history.
-- User style templates.
-- CSV batch generation.
-- PWA manifest and offline cache.
+- Deeper export tools such as copying PNG/SVG to clipboard and browser print.
+- Richer logo masks, frame, and caption export composition.
 
 ## Privacy
 
@@ -78,12 +80,18 @@ src/
     barcodeDetector.ts
     imageInput.ts
     scanner.ts
+  history/
+    historyStorage.ts
+  export/
+    zipExport.ts
   shared/
     fileNames.ts
     security.ts
     types.ts
   templates/
+    templateStorage.ts
     templateValidation.ts
+  pwa.ts
   storage.ts
   validation.ts
 tests/
@@ -101,4 +109,6 @@ scripts/
 - `qr-code-styling`
 - `jsbarcode`
 - `jsQR`
+- `Papa Parse`
+- `JSZip`
 - Node built-in test runner for automated tests

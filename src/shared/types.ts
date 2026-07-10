@@ -1,6 +1,6 @@
 import type { CornerDotType, CornerSquareType, DotType, ErrorCorrectionLevel } from "qr-code-styling";
 
-export type AppMode = "qr" | "barcode" | "scanner";
+export type AppMode = "qr" | "barcode" | "scanner" | "batch";
 export type QRContentType = "url" | "text" | "wifi" | "vcard" | "phone" | "email" | "sms" | "geo" | "event";
 export type ExportFormat = "png" | "jpeg" | "svg";
 export type GradientMode = "solid" | "linear" | "radial";
@@ -19,6 +19,26 @@ export type ScanOutcome = {
   detectorAvailable: boolean;
   fallbackUsed: boolean;
   message: string;
+};
+
+export type CodeKind = "qr" | "barcode";
+
+export type HistoryEntry = {
+  id: string;
+  kind: CodeKind;
+  subtype: string;
+  value: string;
+  title: string;
+  createdAt: string;
+  settings: QRSettings | BarcodeSettings;
+  thumbnail: string;
+};
+
+export type StyleTemplate = {
+  id: string;
+  name: string;
+  createdAt: string;
+  settings: Partial<QRSettings>;
 };
 
 export type WifiSecurity = "WPA" | "WEP" | "nopass";
